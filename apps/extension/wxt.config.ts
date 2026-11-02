@@ -8,7 +8,7 @@ export default defineConfig({
   zip: { name: 'otter-pocket' },
   manifest: {
     name: 'Otter Pocket',
-    description: 'Save the references that matter to the Otter Pocket desktop app, with a link back to where they came from.',
+    description: 'The web clipper for Otter Pocket, a reference board for artists: save images, video frames and pages, each linked to its source.',
     // The store asks why each one is needed: keep those answers in step with this list.
     permissions: ['contextMenus', 'storage', 'unlimitedStorage', 'alarms', 'scripting'],
     // Needed to read images from any site, screenshot the visible tab, and talk to the local app.

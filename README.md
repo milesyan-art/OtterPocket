@@ -11,34 +11,34 @@ Clip it from anywhere. See it on one canvas. Go back whenever you need more.</p>
 
 ---
 
-Artists don't only learn from pictures anymore. A reference can be an illustrator whose style you love, a shop page full of brush examples, or the moment in a video that shows how an animal moves. Every tool keeps part of that. Otter Pocket clips all of it onto a canvas, and every clip keeps its way back to where you found it.
+Artists don't only learn from pictures anymore. A reference can be an illustrator whose style you love, a shop page full of brush examples, or the moment in a video that shows how an animal moves. Every tool keeps part of that. Otter Pocket clips all of it onto a canvas, and every reference keeps its way back to where you found it.
 
 ## How it works
 
 1. **Clip.** In Chrome, right-click any image or video and choose **Save to Otter Pocket**. You can also save the frame of a playing video, a region you drag out, or the whole page, such as an artist's profile. Add one line on why it matters, if you like.
 2. **Arrange.** Each project gets its own canvas: see everything at a glance and move it around freely. Nothing is on it unless you chose it. The few things you want to keep for good go in the **Vault**.
-3. **Go back.** Double-click any clip to open its source: the page, the artist's site, or the video at that exact second.
+3. **Go back.** Double-click any reference to open its source: the page, the artist's site, or the video at that exact second.
 
 ## Why use it
 
 - **It's a board, not a workspace.** No pages, databases or feed to keep up with.
-- **A clip can be more than a picture.** A video frame, a page or an artist, and each one keeps its way back.
+- **A reference can be more than a picture.** A video frame, a page or an artist, and each one keeps its way back.
 - **Full quality.** Each image is saved at the largest size the site offers. A saved Pinterest pin also keeps the link to where the image first came from.
-- **Light.** A small Mac app and a Chrome extension.
+- **Light.** A small Mac app and a web clipper for Chrome.
 - **Yours.** No account, no cloud, no tracking. Your library is one ordinary folder in Documents. Copy it to a new computer and open it there.
 
 ## Saving from Chrome
 
 | To save | Do this |
 | --- | --- |
-| An image or a video | Right-click it → **Save to Otter Pocket** |
+| An image or a video | Right-click it → **Save to Otter Pocket**, or <kbd>⌥</kbd><kbd>⇧</kbd><kbd>A</kbd> (Alt+Shift+A) and click it |
 | The frame of a playing video | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>S</kbd> (Alt+Shift+S) |
-| A region of the page | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>A</kbd>, then drag |
-| The page itself | The Otter Pocket button in Chrome's toolbar → **Save this page** |
+| A region of the page | The Otter Pocket button in Chrome's toolbar → **Capture area**, then drag |
+| The page itself | The Otter Pocket button in Chrome's toolbar → **Save page** |
 
 The only question when you save is where it goes: the Vault or one of your projects. If the app is closed, saves wait in Chrome and arrive the next time it opens.
 
-Otter Pocket is for private reference. It saves only what a site shows you, never a copy-protected video's frames, and every clip keeps a link back to its source, so you can always find the artist again. Ask the artist before you repost or reuse their work.
+Otter Pocket is for private reference. It saves only what a site shows you, never a copy-protected video's frames, and every reference keeps a link back to its source, so you can always find the artist again. Ask the artist before you repost or reuse their work.
 
 ## Your library is a folder
 
@@ -56,7 +56,7 @@ Sea otters have a pocket: a fold of loose skin under each front leg. They keep f
 
 ## Status
 
-Get it from the [download page](https://milesyan-art.github.io/OtterPocket/), which also walks you through installing it. It runs on Macs with Apple silicon, with the extension in Chrome. Every version is also listed under [Releases](https://github.com/milesyan-art/OtterPocket/releases).
+Get it from the [download page](https://milesyan-art.github.io/OtterPocket/), which also walks you through installing it. It runs on Macs with Apple silicon, with the web clipper in Chrome. Every version is also listed under [Releases](https://github.com/milesyan-art/OtterPocket/releases).
 
 ---
 
@@ -69,7 +69,7 @@ npm workspaces: `apps/desktop` (Tauri 2 + React + PixiJS), `apps/extension` (WXT
 ```
 Chrome extension (apps/extension)            Desktop app (apps/desktop, Tauri)
   right-click → Save to Otter Pocket ─POST─▶   127.0.0.1:47600  (capture server)
-  ⌥⇧S video frame · ⌥⇧A region                 │
+  ⌥⇧S video frame · ⌥⇧A image                  │
   toolbar: save this page                       ▼
   (queues captures while the app is closed)    ~/Documents/Otter Pocket/   (the library: one self-contained folder)
                                                   library.db   SQLite: collections, items, placements
