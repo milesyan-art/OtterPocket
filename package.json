@@ -1,0 +1,16 @@
+{
+  "name": "otter-pocket",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "desktop": "npm run tauri dev -w @otterpocket/desktop",
+    "desktop:build": "npm run tauri build -w @otterpocket/desktop",
+    "extension": "npm run dev -w @otterpocket/extension",
+    "extension:build": "npm run build -w @otterpocket/extension",
+    "test": "npm test -w @otterpocket/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

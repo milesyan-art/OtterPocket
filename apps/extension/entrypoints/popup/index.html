@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Otter Pocket</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <img class="mark" src="/icon/48.png" alt="" />
+      <b>Otter Pocket</b>
+      <span id="status" class="status">Checking…</span>
+    </header>
+    <section id="actions" class="group" aria-label="Save from this page"></section>
+    <p id="problem" class="problem" hidden></p>
+    <section class="group" aria-label="Settings">
+      <label class="row tall" for="dock">
+        <span data-icon="dock"></span>
+        <span class="label">
+          Floating button
+          <small>Beside the scrollbar on every page</small>
+        </span>
+        <input id="dock" class="switch" type="checkbox" role="switch" />
+      </label>
+      <p id="dock-note" class="note" hidden>
+        <span id="dock-note-text"></span>
+        <button id="show-here" type="button">Show here</button>
+      </p>
+      <button id="shortcuts" class="row" type="button">
+        <span data-icon="keyboard"></span>
+        <span class="label">Keyboard shortcuts</span>
+        <span class="aside">Change <span data-icon="external"></span></span>
+      </button>
+    </section>
+    <p class="tip">Or right-click any image or video → <b>Save to Otter Pocket</b></p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

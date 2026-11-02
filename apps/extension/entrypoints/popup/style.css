@@ -1,0 +1,267 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --text: #1c1c21;
+  --muted: #62626d;
+  --faint: #8c8c97;
+  --line: #ececf0;
+  --hover: #f2f2f5;
+  --key: #f6f6f8;
+  --key-line: #dcdce2;
+  --track: #d4d4da;
+  --accent: #3366dd;
+  --online: #23a061;
+  --offline: #dd8a3a;
+  --error: #c9352b;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a1e;
+    --text: #ececf0;
+    --muted: #a3a3ae;
+    --faint: #7c7c87;
+    --line: #2a2a30;
+    --hover: #26262c;
+    --key: #232328;
+    --key-line: #3a3a42;
+    --track: #3a3a42;
+    --accent: #8fb3ff;
+    --online: #6fd39b;
+    --offline: #ffb98a;
+    --error: #ff8a80;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  width: 300px;
+  margin: 0;
+  padding: 0 6px 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 8px;
+}
+
+.mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+header b {
+  flex: 1;
+  font-weight: 600;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.status.online::before {
+  background: var(--online);
+}
+
+.status.offline::before {
+  background: var(--offline);
+}
+
+.group {
+  display: grid;
+  gap: 1px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row.tall {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.row:disabled {
+  opacity: 0.45;
+  background: none;
+  cursor: default;
+}
+
+.row svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted);
+}
+
+.label {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.label small {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.keys {
+  display: flex;
+  gap: 3px;
+}
+
+kbd {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--key-line);
+  border-radius: 4px;
+  background: var(--key);
+  color: var(--muted);
+  font: 500 11px/16px Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: center;
+}
+
+.aside {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aside svg {
+  width: 13px;
+  height: 13px;
+}
+
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border-radius: 8px;
+  background: var(--track);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(12px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.note,
+.problem {
+  margin: 0 8px 4px 34px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.problem {
+  margin: -2px 8px 8px;
+  color: var(--error);
+}
+
+.note button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.note button:hover {
+  text-decoration: underline;
+}
+
+.tip {
+  margin: 0;
+  padding: 9px 8px 6px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.tip b {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switch::after {
+    transition: none;
+  }
+}

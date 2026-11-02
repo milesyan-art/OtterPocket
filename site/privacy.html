@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy · Otter Pocket</title>
+  <meta name="description" content="Otter Pocket doesn't collect any data. There is no account, no server, no analytics and no advertising.">
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="./"><img src="icon.png" alt="" width="36" height="36">Otter Pocket</a>
+      <nav>
+        <a href="./">Download</a>
+      </nav>
+    </header>
+
+    <main class="prose">
+      <h1>Privacy policy</h1>
+      <p class="updated">Last updated: 1 November 2026</p>
+
+      <p>Otter Pocket is a Chrome extension and a Mac app for keeping visual references. In short: <strong>Otter Pocket doesn't collect any data.</strong> There is no account, no server, no analytics and no advertising. What you save stays on your computer.</p>
+
+      <h2>What the extension handles, and when</h2>
+      <p>The extension does something only when you ask it to save: the right-click menu item, a keyboard shortcut, or the toolbar button. It then reads:</p>
+      <ul>
+        <li>the image, video frame or page region you chose;</li>
+        <li>the page's address, title and site name, the address of the site's icon, and a little text near the image, so Otter Pocket can take you back to the same spot later;</li>
+        <li>the time in the video, for video frames;</li>
+        <li>the note you type in the save panel, if any.</li>
+      </ul>
+      <p>It sends these to the Otter Pocket app on the same computer, at the address <code>127.0.0.1</code>, which never leaves your computer. The app stores them in your library folder. If the app isn't running, the capture waits in Chrome's local storage for the extension and is sent when the app is next open. The extension also keeps a list of your projects and the last one you used, so the save panel works while the app is closed. Every 30 seconds it tells the app its version number and its keyboard shortcuts, so the app can show that capturing is set up.</p>
+      <p>To save an image at full size, the extension downloads it from the website that hosts it, the same way the page loads it, using your browser's existing session for that site. The extension never reads, stores or passes on your cookies or passwords.</p>
+      <p>On every page, the extension notes where your pointer is, so it knows which image you right-clicked. That position stays in the page, is never stored, and is replaced every time the pointer moves. When you open a saved link to a video, the extension reads the time in the link and jumps the video there.</p>
+
+      <h2>What the Mac app stores</h2>
+      <p>Everything you save is in one folder you choose, <code>Documents/Otter Pocket</code> unless you pick another place. The app also keeps a small settings file on your Mac with two things: where that folder is, and a random ID that tells your computers apart if you share the folder between them. While the library is open, the folder also holds a note saying which computer has it open (your Mac's name), so a second computer can warn you.</p>
+      <p>The app listens for the extension only at <code>127.0.0.1</code>, which no other computer can reach. The only internet requests it makes are for the small site icons it shows next to your references, loaded from those sites. Links you open from the app open in your browser.</p>
+
+      <h2>Sharing</h2>
+      <p>Otter Pocket shares nothing with anyone: not with its maker, and not with any third party. Nothing is sold. Otter Pocket's use of information follows the <a href="https://developer.chrome.com/docs/webstore/program-policies/">Chrome Web Store User Data Policy</a>, including its Limited Use requirements.</p>
+
+      <h2>Your control</h2>
+      <p>Delete any reference in the app, or delete the library folder to remove everything. Removing the extension deletes its local storage, including any captures still waiting for the app.</p>
+
+      <h2>Changes and contact</h2>
+      <p>If this policy changes, the date at the top changes with it. Questions: ask on <a href="https://github.com/milesyan-art/otter-pocket/issues">GitHub</a>.</p>
+    </main>
+
+    <footer class="foot">
+      <a href="./">Download Otter Pocket</a>
+      <a href="https://github.com/milesyan-art/otter-pocket">Source on GitHub</a>
+    </footer>
+  </div>
+</body>
+</html>

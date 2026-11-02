@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Code-signing entitlements for the Developer ID build (downloaded directly, notarized, hardened runtime).
+  Empty on purpose: the app is not sandboxed, the webview's JavaScript runs in WebKit's own processes
+  (so no JIT exceptions), and it uses no camera, microphone, location or Apple Events. Folder access is
+  covered by the purpose strings in Info.plist. A Mac App Store build would need the sandbox and more.
+-->
+<plist version="1.0">
+<dict>
+</dict>
+</plist>

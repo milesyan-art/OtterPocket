@@ -1,0 +1,1886 @@
+:root {
+  --bg: #141417;
+  --panel: #1a1a1e;
+  --panel-2: #212126;
+  --line: #2b2b31;
+  --line-strong: #3a3a42;
+  --text: #ececf0;
+  --text-2: #a9a9b4;
+  --muted: #74747f;
+  --accent: #8fb3ff;
+  --accent-ink: #0d1424;
+  --danger: #ff8a80;
+  --warning: #f2c46d;
+  --radius: 10px;
+  --sidebar-w: 248px;
+  --inspector-w: 304px;
+  --toolbar-h: 52px;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: var(--text);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+.icon {
+  flex: none;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  margin-right: 2px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+  color: var(--text-2);
+}
+
+/* ---- layout --------------------------------------------------------------------------- */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--inspector-w);
+  /* One row exactly the window's height. Sized by content, a tall inspector (say, a portrait picture with
+     notes) stretched the whole row, and the canvas with it, which slid the board when an item was selected. */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+.main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- sidebar -------------------------------------------------------------------------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+/* Space for the macOS traffic lights; also lets you drag the window. */
+.sidebar-top,
+.inspector-top {
+  height: 44px;
+  flex: none;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--text-2);
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.row.active {
+  background: #2a2f3d;
+  color: var(--text);
+}
+
+.row-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vault-row {
+  height: 34px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vault-row .icon {
+  color: var(--accent);
+}
+
+.sidebar-hint {
+  padding: 2px 10px 0 33px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 22px 4px 6px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section-actions,
+.row-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.section-actions button,
+.row-actions button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.section-actions button:hover,
+.row-actions button:hover {
+  background: var(--line-strong);
+  color: var(--text);
+}
+
+.row-actions {
+  display: none;
+  align-items: center;
+}
+
+.row:hover .row-actions,
+.row-actions.visible {
+  display: flex;
+}
+
+.row-actions button.danger:hover {
+  color: var(--danger);
+}
+
+.confirm-label {
+  margin-right: 4px;
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chevron,
+.chevron-spacer {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+.rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  outline: none;
+}
+
+.empty-projects {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 7px;
+  color: var(--text-2);
+}
+
+.empty-projects:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 6px;
+  border-top: 1px solid var(--line);
+}
+
+.library-menu {
+  position: relative;
+}
+
+/* The library is a place you go to, so it reads as one: quiet, but always in the same spot. */
+.library-card {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.library-card:hover,
+.library-card.open {
+  border-color: var(--line-strong);
+  background: #25252b;
+}
+
+.library-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 4px 7px 7px;
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.library-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(143, 179, 255, 0.12);
+  color: var(--accent);
+}
+
+.library-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.library-name,
+.library-where {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.library-name {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.library-where {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.library-reveal {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 5px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.library-reveal:hover {
+  background: var(--line-strong);
+  color: var(--text);
+}
+
+.library-main:focus-visible,
+.library-reveal:focus-visible,
+.help-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Capture status: one quiet line that only speaks up when captures can't arrive. */
+.capture-status {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 0 0 9px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.capture-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.capture-status .dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.capture-status.connected .dot {
+  background: #6fd39b;
+}
+
+.capture-status.looking .dot {
+  animation: looking 1.4s ease-in-out infinite;
+}
+
+.capture-status.missing .dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(242, 196, 109, 0.15);
+}
+
+.capture-status.offline .dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 138, 128, 0.15);
+}
+
+.capture-status.missing .capture-label,
+.capture-status.offline .capture-label {
+  color: var(--text-2);
+}
+
+@keyframes looking {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.help-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.capture-help:hover .help-button {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* A shortcut Chrome left unassigned. */
+.help-button.attention::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--panel);
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+/* Opens upward over the library card. Its bottom padding bridges the gap to the button, so the pointer can
+   travel into it without it closing. */
+.capture-popover {
+  position: absolute;
+  bottom: 100%;
+  left: -1px;
+  z-index: 30;
+  width: 296px;
+  padding-bottom: 6px;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0s linear 0.12s;
+}
+
+.capture-help:hover .capture-popover,
+.capture-help:focus-within .capture-popover {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.15s;
+}
+
+.capture-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: #1e1e23;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.capture-problem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.capture-problem h4 {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.capture-detail {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.capture-heading {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.capture-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capture-steps li {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.capture-keys {
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.capture-steps b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.capture-keys .unset {
+  color: var(--warning);
+  font-weight: 400;
+}
+
+.capture-note {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.capture-foot {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-popover,
+  .capture-status.looking .dot {
+    transition: none;
+    animation: none;
+  }
+}
+
+.library-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: #1e1e23;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  animation: pop-in 120ms ease-out;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.popover-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 4px;
+  padding: 7px 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.popover-label {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.popover-path {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.library-popover button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.library-popover button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.popover-tip {
+  margin-top: 4px;
+  padding: 9px 8px 4px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* ---- toolbar -------------------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--toolbar-h);
+  padding: 8px 14px 0 20px;
+  flex: none;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toolbar-title h1 {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- floating toolbar ----------------------------------------------------------------- */
+
+/* Everything floating at the bottom of the board, stacked so nothing covers anything: toast, menu, tools. */
+.float-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.float-dock > * {
+  pointer-events: auto;
+}
+
+.float-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(26, 26, 30, 0.92);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.float-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--line-strong);
+}
+
+.tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.tool:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.tool[aria-pressed='true'],
+.tool[aria-expanded='true'] {
+  background: #2a2f3d;
+  color: var(--accent);
+}
+
+/* A tool with choices gets a small corner mark, as in design apps. */
+.tool[aria-haspopup]::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  border: 2.5px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+  opacity: 0.6;
+}
+
+.tool-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 248px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: #1e1e23;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  animation: pop-in 120ms ease-out;
+}
+
+.tool-menu button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.tool-menu button:hover,
+.tool-menu button:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+
+.tool-menu-sample {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 38px;
+  border-radius: 7px;
+  background: #151518;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.tool-menu button:hover .tool-menu-sample,
+.tool-menu button:focus-visible .tool-menu-sample {
+  color: var(--accent);
+  border-color: #33405e;
+}
+
+.tool-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-menu-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Shows after a short hover, like a design app's tooltips, instead of the slow system one. */
+.tool-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #0f0f12;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.tool:hover .tool-tip,
+.tool:focus-visible .tool-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 0.35s;
+}
+
+/* The open menu already says what the tool is. */
+.tool[aria-expanded='true'] .tool-tip {
+  display: none;
+}
+
+.tool-tip kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-tip {
+    transition: none;
+  }
+}
+
+/* ---- board ---------------------------------------------------------------------------- */
+
+.board,
+.board-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.board-canvas canvas {
+  display: block;
+}
+
+.source-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  background: rgba(20, 20, 24, 0.88);
+  border: 1px solid var(--line-strong);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.source-badge:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.source-badge img,
+.card-source img,
+.source-site img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.source-badge span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-time {
+  color: var(--accent);
+}
+
+/* ---- vault ---------------------------------------------------------------------------- */
+
+.vault {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  /* Room at the bottom so the floating toolbar never covers the last row. */
+  padding: 8px 20px 88px;
+}
+
+.vault-grid {
+  columns: 250px;
+  column-gap: 16px;
+}
+
+.card {
+  break-inside: avoid;
+  margin-bottom: 16px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  cursor: default;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.card:hover {
+  border-color: var(--line-strong);
+}
+
+/* An inset outline: a shadow outside the card bleeds into the top of the next column in WebKit. */
+.card.selected {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Just saved: a thick ring that settles into the selection outline, so the new card is easy to spot. */
+.card.arrived {
+  animation: arrive 900ms ease-out;
+}
+
+@keyframes arrive {
+  0%,
+  35% {
+    border-color: var(--accent);
+    outline: 6px solid var(--accent);
+    outline-offset: -6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.arrived {
+    animation: none;
+  }
+}
+
+.card-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--panel-2);
+}
+
+/* A saved page's picture, cut to the shape it has on a board; an icon or profile photo sits small in it. */
+.card-image.bookmark {
+  object-fit: cover;
+}
+
+.card-image.bookmark.small {
+  object-fit: contain;
+  padding: 14% 0;
+}
+
+.card-cover {
+  display: flex;
+  align-items: flex-end;
+  min-height: 150px;
+  padding: 18px 16px;
+  background: linear-gradient(160deg, #262636, #1c1c22);
+}
+
+.card-cover h3 {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 13px 12px;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.card-why {
+  color: var(--text-2);
+  font-size: 13px;
+  border-left: 2px solid var(--accent);
+  padding-left: 9px;
+}
+
+.card-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card-source span:first-of-type {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.card-source:hover {
+  color: var(--accent);
+}
+
+.kind {
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.kind-video_frame {
+  color: #ffb98a;
+}
+
+.kind-artist {
+  color: #d6a4ff;
+}
+
+.kind-article {
+  color: #9ee0c0;
+}
+
+/* ---- empty state ---------------------------------------------------------------------- */
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.empty-state h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.empty-state p {
+  max-width: 440px;
+  color: var(--text-2);
+}
+
+/* ---- inspector ------------------------------------------------------------------------ */
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+
+.inspector-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.inspector-empty {
+  padding: 0 22px;
+  color: var(--text-2);
+}
+
+.inspector-empty ul {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.inspector-preview {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.inspector-kind {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field > span,
+.inspector-section h4 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  outline: none;
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+}
+
+/* The note: a quiet line when empty, a quote like the Vault card's when written, a box only while typing. */
+.why-add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  height: 28px;
+  margin: -4px -8px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.why-add:hover {
+  background: var(--panel-2);
+  color: var(--text-2);
+}
+
+/* The accent rule is .card-why's, drawn inset so the hover background can surround it. */
+.why-note {
+  margin: -4px -8px;
+  padding: 4px 8px 4px 11px;
+  border-radius: 7px;
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text-2);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.why-note:hover {
+  background: var(--panel-2);
+}
+
+.why-add:focus-visible,
+.why-note:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.why-field {
+  width: calc(100% + 16px);
+  max-height: 240px;
+  margin: -4px -8px;
+  padding: 4px 8px 4px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+  outline: none;
+  resize: none;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.source-site {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.source-title {
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.source-links {
+  display: flex;
+  gap: 14px;
+}
+
+button.link {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button.link:hover {
+  color: var(--accent);
+}
+
+button.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+/* Boards read as places, like the sidebar's rows: a tile, the name, and a way there. */
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 8px 0 6px;
+  border-radius: 7px;
+  color: var(--text);
+  text-align: left;
+}
+
+.board-row:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.board-row:disabled {
+  opacity: 1;
+}
+
+.board-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.board-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text-2);
+}
+
+.board-row.current .board-tile {
+  background: #2a2f3d;
+  color: var(--accent);
+}
+
+.board-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-row-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.board-row > .icon {
+  color: var(--muted);
+  opacity: 0;
+}
+
+.board-row:hover > .icon {
+  opacity: 1;
+}
+
+.board-row.add {
+  color: var(--text-2);
+}
+
+.board-row.add .board-tile,
+.board-row.candidate .board-tile {
+  background: none;
+  border: 1px dashed var(--line-strong);
+}
+
+/* Sets adding apart from the boards it's already on. */
+.board-row.add:not(:first-child) {
+  position: relative;
+  margin-top: 5px;
+}
+
+.board-row.add:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 6px;
+  right: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.board-row.add:hover,
+.board-row.add[aria-expanded='true'] {
+  color: var(--accent);
+}
+
+.board-row.add[aria-expanded='true'] .board-tile {
+  border-color: #3d4a6b;
+  color: var(--accent);
+}
+
+/* Boards it could go on, under "Add to a board" while that's open. */
+.board-row.candidate {
+  color: var(--text-2);
+  animation: pop-in 120ms ease-out;
+}
+
+.board-row.candidate:hover {
+  color: var(--text);
+}
+
+.board-row.candidate:hover .board-tile {
+  border-color: #3d4a6b;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-row.candidate {
+    animation: none;
+  }
+}
+
+.actions {
+  gap: 2px;
+}
+
+.actions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--text-2);
+}
+
+.actions button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.actions button.danger:hover {
+  color: var(--danger);
+}
+
+/* ---- toast & modal -------------------------------------------------------------------- */
+
+/* Sits in the float dock, above the toolbar and any open tool menu. */
+.toast {
+  padding: 9px 16px;
+  border-radius: 20px;
+  background: #2a2f3d;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  max-width: min(560px, calc(100% - 40px));
+  text-align: center;
+}
+
+.toast.clickable {
+  cursor: pointer;
+}
+
+.toast-action {
+  margin-left: 14px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.toast-action:hover {
+  text-decoration: underline;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 20;
+}
+
+.modal {
+  width: min(420px, calc(100vw - 40px));
+  padding: 22px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal h3 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.modal p {
+  color: var(--text-2);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.modal-actions button.danger.solid {
+  background: #c9463d;
+  color: white;
+}
+
+/* ---- library setup -------------------------------------------------------------------- */
+
+.app-failure {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 40px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.setup {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 64px 24px 48px;
+  background:
+    radial-gradient(900px 480px at 50% -12%, rgba(143, 179, 255, 0.12), transparent 70%),
+    var(--bg);
+}
+
+.setup-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  z-index: 1;
+}
+
+/* Centred when it fits, scrolls when the window is short. */
+.setup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(560px, 100%);
+  margin: auto 0;
+}
+
+.setup-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  border: 1px solid #2f3648;
+  background: #232838;
+  color: var(--accent);
+}
+
+.setup-mark.ok {
+  border-color: rgba(111, 211, 155, 0.25);
+  background: rgba(111, 211, 155, 0.12);
+  color: #6fd39b;
+}
+
+.setup-mark.warn {
+  border-color: rgba(255, 185, 138, 0.25);
+  background: rgba(255, 185, 138, 0.1);
+  color: #ffb98a;
+}
+
+.setup-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup h1 {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.setup-lead {
+  color: var(--text-2);
+  text-wrap: pretty;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.explainer {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.explainer-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 15px;
+  border-bottom: 1px solid var(--line);
+  background: #17171b;
+}
+
+.tree-line {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding-left: 25px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tree-line.root {
+  padding-left: 0;
+  color: var(--accent);
+}
+
+.tree-name {
+  min-width: 82px;
+  color: var(--text-2);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.tree-line.root .tree-name {
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.tree-note {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tree-line.root .tree-note {
+  justify-self: end;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(143, 179, 255, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.explainer-points {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 18px 16px;
+  list-style: none;
+}
+
+.explainer-points li {
+  display: flex;
+  gap: 10px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.explainer-points .icon {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.explainer-points b,
+.setup-tip b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.problem {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 185, 138, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 185, 138, 0.06);
+}
+
+/* In a dialog, the dialog is already the frame. */
+.modal .problem {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.problem-icon {
+  padding-top: 1px;
+  color: #ffb98a;
+}
+
+.problem-text {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.problem-text h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.problem-text p {
+  color: var(--text-2);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.problem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.problem-actions button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel-2);
+  font-size: 12.5px;
+}
+
+.problem-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.problem-actions button.quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--text-2);
+}
+
+.problem-actions button.quiet:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--text);
+}
+
+.setup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+button.primary.large {
+  height: 42px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+button.primary:disabled:hover {
+  filter: none;
+}
+
+button.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-weight: 500;
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.setup-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.setup-buttons button {
+  min-width: 150px;
+  padding: 0 18px;
+}
+
+.setup-note {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+button.primary:focus-visible,
+button.secondary:focus-visible {
+  outline: 2px solid rgba(143, 179, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.setup-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  color: var(--muted);
+}
+
+.setup-buttons + .setup-links {
+  justify-content: flex-start;
+}
+
+.setup-links button.link {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.setup-links button.link:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.path-row .icon {
+  color: var(--accent);
+}
+
+.path-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.setup-warning {
+  color: #ffb98a;
+  font-size: 12.5px;
+}
+
+.setup-tip {
+  color: var(--text-2);
+}

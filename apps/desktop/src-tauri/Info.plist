@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app's Info.plist by the Tauri bundler. macOS shows these in its permission prompts. -->
+<plist version="1.0">
+<dict>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Otter Pocket keeps your library (your images, boards and notes) in a folder in Documents.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Otter Pocket needs access to open a library you keep on your Desktop.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Otter Pocket needs access to open a library you keep in Downloads.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Otter Pocket needs access to open a library you keep on an external drive.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Otter Pocket needs access to open a library you keep on a network drive.</string>
+  <key>NSFileProviderDomainUsageDescription</key>
+  <string>Otter Pocket needs access to open a library you keep in a cloud folder such as Dropbox or Google Drive.</string>
+</dict>
+</plist>

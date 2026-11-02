@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Otter Pocket: a reference board for artists</title>
+  <meta name="description" content="Clip images, video frames and pages from Chrome onto a canvas for each project. Every clip keeps its way back to where you found it. Free, for Mac.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Otter Pocket">
+  <meta property="og:description" content="A reference board for artists that remembers where everything came from. Clip it from anywhere. See it on one canvas. Go back whenever you need more.">
+  <meta property="og:url" content="https://milesyan-art.github.io/otter-pocket/">
+  <meta property="og:image" content="https://milesyan-art.github.io/otter-pocket/icon.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="favicon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="download.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="./"><img src="icon.png" alt="" width="36" height="36">Otter Pocket</a>
+      <nav>
+        <a href="#get-started">Get started</a>
+        <a href="#questions">Questions</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="hero">
+        <img class="icon" src="icon.png" width="512" height="512" alt="Otter Pocket icon: a hand-painted white sea otter">
+        <h1>Otter Pocket</h1>
+        <p class="tagline">A reference board for artists that remembers where everything came from.</p>
+        <p class="lede">Clip it from anywhere. See it on one canvas. Go back whenever you need more.</p>
+        <p class="notice" id="not-mac" hidden>Otter Pocket is a Mac app with a Chrome extension. Open this page on your Mac to download it.</p>
+        <!-- download.js swaps this for the newest .dmg. Without it, the release page works too. -->
+        <a class="button" id="download" href="https://github.com/milesyan-art/otter-pocket/releases/latest">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16.5h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="label">Download for Mac</span>
+        </a>
+        <p class="meta">
+          <span>Free</span>
+          <span id="release-version" hidden></span>
+          <span id="release-size" hidden></span>
+          <span>Macs with Apple silicon</span>
+        </p>
+      </div>
+
+      <section id="get-started">
+        <h2>Get started</h2>
+        <ol class="steps">
+          <li class="step">
+            <div>
+              <h3>Install the Mac app</h3>
+              <p>Open the file you downloaded and drag Otter Pocket into the <b>Applications</b> folder.</p>
+              <!-- While releases aren't notarized. Once they are, replace this block with: "Then open it from
+                   Applications. The first time, your Mac asks whether to open an app downloaded from the internet:
+                   click <b>Open</b>." and remove the second sentence of "How do I update?" below. -->
+              <div>
+                <p>This first version hasn't been checked by Apple yet, so the first time you open it, your Mac asks you to confirm. You only do this once:</p>
+                <ol>
+                  <li>Open Otter Pocket from Applications. Your Mac says <b>“Otter Pocket” Not Opened</b>. Click <b>Done</b>.</li>
+                  <li>Open <b>System Settings</b>, choose <b>Privacy &amp; Security</b>, and scroll down to <b>Security</b>. Next to the line saying Otter Pocket was blocked, click <b>Open Anyway</b>.</li>
+                  <li>Confirm with your password or Touch ID, then click <b>Open Anyway</b> once more.</li>
+                </ol>
+                <p class="tip">On macOS 12 or earlier, it's <b>System Preferences › Security &amp; Privacy › General</b>.</p>
+              </div>
+              <p>Otter Pocket then sets up your library: one ordinary folder, <b>Documents › Otter Pocket</b>.</p>
+            </div>
+          </li>
+          <li class="step">
+            <div>
+              <h3>Add the Chrome extension</h3>
+              <div id="extension-store" hidden>
+                <p>The extension is how you clip from the web. It's free too.</p>
+                <p><a class="button small" id="chrome-store" href="#">Add to Chrome</a></p>
+              </div>
+              <div id="extension-manual">
+                <p>The extension is how you clip from the web. It's waiting for review in the Chrome Web Store, so for now you add it by hand. It takes a minute:</p>
+                <ol>
+                  <li><a id="extension-zip" href="https://github.com/milesyan-art/otter-pocket/releases/latest">Download the extension</a>, then double-click the downloaded file to unzip it.</li>
+                  <li>Move the folder it made into <b>Documents</b> and keep it there. Chrome runs the extension from that folder.</li>
+                  <li>In Chrome, go to <code>chrome://extensions</code> <button class="copy" type="button" data-copy="chrome://extensions">Copy</button> and turn on <b>Developer mode</b> at the top right.</li>
+                  <li>Click <b>Load unpacked</b> and choose the folder.</li>
+                </ol>
+                <p>Once the Chrome Web Store approves it, an <b>Add to Chrome</b> button will be here instead.</p>
+              </div>
+              <p class="tip">Then click the puzzle piece in Chrome's toolbar and pin Otter Pocket. Its button saves the whole page, such as an artist's profile.</p>
+            </div>
+          </li>
+          <li class="step">
+            <div>
+              <h3>Save your first clip</h3>
+              <p>With Otter Pocket open, right-click any image in Chrome and choose <b>Save to Otter Pocket</b>. Pick the Vault or a project, and it's on your canvas.</p>
+              <p><kbd>⌥ Option</kbd> <kbd>⇧ Shift</kbd> <kbd>S</kbd> saves the frame of a playing video. <kbd>⌥ Option</kbd> <kbd>⇧ Shift</kbd> <kbd>A</kbd> saves a region you drag out.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>How it works</h2>
+        <div class="features">
+          <div>
+            <h3>Clip</h3>
+            <p>In Chrome, right-click any image or video. You can also save the frame of a playing video, a region you drag out, or the whole page, such as an artist's profile.</p>
+          </div>
+          <div>
+            <h3>Arrange</h3>
+            <p>Each project gets its own canvas: see everything at a glance and move it around freely. Nothing is on it unless you chose it. The few things you want to keep for good go in the <b>Vault</b>.</p>
+          </div>
+          <div>
+            <h3>Go back</h3>
+            <p>Double-click any clip to open its source: the page, the artist's site, or the video at that exact second.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="questions">
+        <h2>Questions</h2>
+        <details>
+          <summary>Which Mac do I need?</summary>
+          <p>A Mac with Apple silicon: M1 or any later chip, on macOS 11 Big Sur or later. To check, open the Apple menu and choose <b>About This Mac</b>. If it lists a <b>Chip</b>, such as Apple M1, you're set. If it lists an Intel <b>Processor</b>, Otter Pocket doesn't run on that Mac yet.</p>
+        </details>
+        <details>
+          <summary>Does it cost anything?</summary>
+          <p>No, Otter Pocket is free. There's no account, no cloud and no tracking: what you save stays on your Mac. See the <a href="privacy.html">privacy policy</a>.</p>
+        </details>
+        <details>
+          <summary>Where are my clips kept?</summary>
+          <p>In one ordinary folder, <b>Documents › Otter Pocket</b>. To move to a new Mac, copy the folder over (or keep it in iCloud Drive or Dropbox), install Otter Pocket there, and choose <b>Open an existing library</b>.</p>
+        </details>
+        <details>
+          <summary>What about other artists' work?</summary>
+          <p>Otter Pocket is for private reference. It saves only what a site shows you, at the size the site offers, and never frames of copy-protected video. What you save stays on your Mac with a link back to where it came from, so you can always find the artist again. Ask the artist before you repost or reuse their work.</p>
+        </details>
+        <details>
+          <summary>How do I update?</summary>
+          <p>Download the new version from this page and drag it into Applications, replacing the old one. Your Mac asks you to confirm it once more, the same way as the first time. Your library isn't touched.</p>
+        </details>
+        <details>
+          <summary>Is there a version for Windows, Safari or Firefox?</summary>
+          <p>Not yet. For now Otter Pocket is a Mac app with a Chrome extension.</p>
+        </details>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/milesyan-art/otter-pocket/releases">All versions</a>
+      <a href="https://github.com/milesyan-art/otter-pocket">Source on GitHub</a>
+    </footer>
+  </div>
+</body>
+</html>
