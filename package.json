@@ -9,6 +9,7 @@
     "desktop": "npm run tauri dev -w @otterpocket/desktop",
     "desktop:build": "npm run tauri build -w @otterpocket/desktop",
     "desktop:release": "RUSTFLAGS=\"--remap-path-prefix=$HOME=~\" npm run desktop:build",
+    "desktop:update-feed": "node scripts/update-feed.mjs",
     "extension": "npm run dev -w @otterpocket/extension",
     "extension:build": "npm run build -w @otterpocket/extension",
     "test": "npm test -w @otterpocket/shared",

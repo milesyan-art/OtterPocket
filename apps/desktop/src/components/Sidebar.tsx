@@ -4,6 +4,7 @@ import { api, type Collection, type LibraryInfo, type SetupAction } from '../api
 import { CaptureStatus } from './CaptureStatus';
 import { Icon } from './Icon';
 import { LibraryMenu } from './LibraryMenu';
+import { UpdateButton } from './UpdateButton';
 
 interface Props {
   collections: Collection[];
@@ -155,6 +156,7 @@ export function Sidebar(props: Props) {
       </div>
 
       <footer className="sidebar-footer">
+        <UpdateButton />
         <LibraryMenu library={library} onReveal={onRevealLibrary} onSwitch={onSwitchLibrary} />
         <CaptureStatus library={library} />
       </footer>

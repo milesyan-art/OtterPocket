@@ -28,6 +28,8 @@ base64 = "0.23.1"
 sha2 = "0.11.1"
 uuid = { version = "1.29.0", features = ["v4"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 
 # Full debug info for every dependency makes target/ several GB; line tables keep readable backtraces.

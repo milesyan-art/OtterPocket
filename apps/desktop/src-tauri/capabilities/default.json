@@ -8,6 +8,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-always-on-top",
     "opener:default",
-    "opener:allow-reveal-item-in-dir"
+    "opener:allow-reveal-item-in-dir",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

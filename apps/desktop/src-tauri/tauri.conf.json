@@ -42,6 +42,15 @@
       "hardenedRuntime": true,
       "entitlements": "Entitlements.plist",
       "signingIdentity": "-"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/milesyan-art/OtterPocket-updates/releases/latest/download/latest.json"
+      ]
     }
   }
 }

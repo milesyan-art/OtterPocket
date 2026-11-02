@@ -292,6 +292,34 @@ kbd {
   border-top: 1px solid var(--line);
 }
 
+.update-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.update-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.update-button:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.update-button.failed {
+  background: var(--panel-2);
+  color: var(--danger);
+}
+
 .library-menu {
   position: relative;
 }

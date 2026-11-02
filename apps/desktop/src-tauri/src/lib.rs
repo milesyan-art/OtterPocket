@@ -20,6 +20,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // The Update button: checks the update feed, installs a signed update, then restarts the app.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // Serves library images to the webview as lib://localhost/assets/…
         .register_uri_scheme_protocol("lib", |ctx, request| serve_asset(ctx.app_handle(), &request))
         .setup(|app| {
