@@ -7,7 +7,7 @@
 <p align="center"><b>A reference board for artists that remembers where everything came from.</b><br>
 Clip it from anywhere. See it on one canvas. Go back whenever you need more.</p>
 
-<p align="center"><a href="https://milesyan-art.github.io/otter-pocket/"><b>Download Otter Pocket for Mac</b></a> · free</p>
+<p align="center"><a href="https://milesyan-art.github.io/OtterPocket/"><b>Download Otter Pocket for Mac</b></a> · free</p>
 
 ---
 
@@ -56,7 +56,7 @@ Sea otters have a pocket: a fold of loose skin under each front leg. They keep f
 
 ## Status
 
-Get it from the [download page](https://milesyan-art.github.io/otter-pocket/), which also walks you through installing it. It runs on Macs with Apple silicon, with the extension in Chrome. Every version is also listed under [Releases](https://github.com/milesyan-art/otter-pocket/releases).
+Get it from the [download page](https://milesyan-art.github.io/OtterPocket/), which also walks you through installing it. It runs on Macs with Apple silicon, with the extension in Chrome. Every version is also listed under [Releases](https://github.com/milesyan-art/OtterPocket/releases).
 
 ---
 
