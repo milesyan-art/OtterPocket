@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react';
 import { CHECK_IN_SECONDS } from '@otterpocket/shared';
-import { api, onExtensionSeen, type ExtensionContact, type LibraryInfo } from '../api';
+import { api, onExtensionSeen, onServerStatus, type ExtensionContact, type LibraryInfo } from '../api';
 import { Icon } from './Icon';
 
 /** After this long without a check-in, Chrome has been closed or the extension removed. */
@@ -26,6 +26,8 @@ const SHORTCUTS = [
 /** Whether the Chrome extension is installed and reaching the app, and, on hover, how to save from Chrome. */
 export function CaptureStatus({ library }: { library: LibraryInfo }) {
   const [contact, setContact] = useState<ExtensionContact | null>(null);
+  // The server keeps trying a busy port, so this changes on its own once the other copy quits.
+  const [serverError, setServerError] = useState(library.serverError);
   const [openedAt] = useState(Date.now);
   // Being connected wears off with time alone, so look again every few seconds.
   const [, tick] = useReducer((n: number) => n + 1, 0);
@@ -34,15 +36,19 @@ export function CaptureStatus({ library }: { library: LibraryInfo }) {
     const keepNewest = (next: ExtensionContact | null) => setContact((c) => (next && (!c || next.at > c.at) ? next : c));
     api.extensionContact().then(keepNewest, () => undefined);
     const unlisten = onExtensionSeen(keepNewest);
+    const unlistenServer = onServerStatus(setServerError);
     const timer = window.setInterval(tick, 5000);
     return () => {
       window.clearInterval(timer);
       void unlisten.then((stop) => stop());
+      void unlistenServer.then((stop) => stop());
     };
   }, []);
 
+  useEffect(() => setServerError(library.serverError), [library.serverError]);
+
   const now = Date.now();
-  const state: State = library.serverError
+  const state: State = serverError
     ? 'offline'
     : contact && now - contact.at < STALE_MS
       ? 'connected'
@@ -65,8 +71,8 @@ export function CaptureStatus({ library }: { library: LibraryInfo }) {
             {state === 'offline' && (
               <div className="capture-problem">
                 <h4>Captures can't reach this app</h4>
-                <p>Another copy of Otter Pocket may be running. Quit it, then reopen this one.</p>
-                <p className="capture-detail">{library.serverError}</p>
+                <p>Another copy of Otter Pocket may be open. Quit it, and this one connects by itself within a few seconds.</p>
+                <p className="capture-detail">{serverError}</p>
               </div>
             )}
             {state === 'missing' && (
@@ -75,13 +81,13 @@ export function CaptureStatus({ library }: { library: LibraryInfo }) {
                 <p>
                   {contact
                     ? `Otter Pocket last heard from Chrome ${ago(contact.at)}. Open Chrome to save from the web.`
-                    : 'Add the Otter Pocket extension to Chrome and keep Chrome open. It checks in with this app every 30 seconds.'}
+                    : 'Add the Otter Pocket web clipper to Chrome and keep Chrome open. It checks in with this app every 30 seconds.'}
                 </p>
               </div>
             )}
             {state === 'looking' && (
               <div className="capture-problem">
-                <p>Waiting for the Chrome extension to check in. This takes up to a minute after the app opens.</p>
+                <p>Waiting for the web clipper to check in. This takes up to a minute after the app opens.</p>
               </div>
             )}
 

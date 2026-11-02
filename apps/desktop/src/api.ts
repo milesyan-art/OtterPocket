@@ -142,6 +142,11 @@ export function onExtensionSeen(handler: (contact: ExtensionContact) => void): P
   return listen<ExtensionContact>('extension-seen', (event) => handler(event.payload));
 }
 
+/** Fired when the capture server can't get its port (the error) or finally gets it (null). */
+export function onServerStatus(handler: (error: string | null) => void): Promise<UnlistenFn> {
+  return listen<string | null>('capture-server', (event) => handler(event.payload));
+}
+
 /** URL the webview can load a library image from (served by the `lib` protocol in lib.rs). */
 export function assetUrl(asset: string): string {
   return convertFileSrc(asset, 'lib');

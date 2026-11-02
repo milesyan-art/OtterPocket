@@ -12,9 +12,6 @@ use crate::{
     setup::CurrentLibrary,
 };
 
-/// Error from starting the capture server, kept so the UI can explain why captures are not arriving.
-pub struct ServerStatus(pub Option<String>);
-
 type Lib<'a> = State<'a, Arc<CurrentLibrary>>;
 
 #[tauri::command]

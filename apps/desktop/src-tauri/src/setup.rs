@@ -15,11 +15,10 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::{
-    commands::ServerStatus,
     library::{DB_FILE, Library, OpenOptions, OpenProblem, Result, err},
     lock::LockOwner,
     models::{LibraryInfo, LibraryStats},
-    server::CAPTURE_PORT,
+    server::{CAPTURE_PORT, ServerStatus},
 };
 
 /// Folder made in Documents for a new library. Keep every name ever shipped in this list (newest
@@ -317,7 +316,7 @@ impl Setup {
             root: library.root().to_string_lossy().into_owned(),
             display_path: self.display(library.root()),
             capture_address: format!("127.0.0.1:{CAPTURE_PORT}"),
-            server_error: server.0.clone(),
+            server_error: server.error(),
         }
     }
 
@@ -331,14 +330,14 @@ impl Setup {
 }
 
 #[tauri::command]
-pub fn library_status(current: State<Arc<CurrentLibrary>>, setup: State<Setup>, server: State<ServerStatus>) -> LibraryStatus {
+pub fn library_status(current: State<Arc<CurrentLibrary>>, setup: State<Setup>, server: State<Arc<ServerStatus>>) -> LibraryStatus {
     setup.status(&current, &server)
 }
 
 /// Async so the folder picker doesn't block the main thread it is drawn on.
 #[tauri::command]
 pub async fn setup_library(app: AppHandle, action: SetupAction, force: bool) -> Result<SetupResult> {
-    let (setup, current, server) = (app.state::<Setup>(), app.state::<Arc<CurrentLibrary>>(), app.state::<ServerStatus>());
+    let (setup, current, server) = (app.state::<Setup>(), app.state::<Arc<CurrentLibrary>>(), app.state::<Arc<ServerStatus>>());
     setup.run(&app, &current, &server, action, force)
 }
 
@@ -583,7 +582,7 @@ mod tests {
         // On another thread with a timeout, so a lock-ordering mistake fails the test instead of hanging it.
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let status = setup.status(&CurrentLibrary::default(), &ServerStatus(None));
+            let status = setup.status(&CurrentLibrary::default(), &ServerStatus::default());
             tx.send(serde_json::to_value(status).unwrap()).unwrap();
         });
         let status = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("status() answered");
@@ -608,7 +607,7 @@ mod tests {
         current.replace(Some(Arc::new(Library::open(&library_dir, options).unwrap())));
 
         fs::rename(&library_dir, root.join("Documents").join("Elsewhere")).unwrap();
-        let status = serde_json::to_value(setup.status(&current, &ServerStatus(None))).unwrap();
+        let status = serde_json::to_value(setup.status(&current, &ServerStatus::default())).unwrap();
         assert_eq!(status["problem"]["code"], "not-found");
         assert!(current.get().is_err(), "the moved library was closed");
         assert!(!library_dir.exists(), "the old path was not recreated");

@@ -136,7 +136,7 @@ pub struct LibraryInfo {
     /// How people would describe the location: "Documents › Otter Pocket".
     pub display_path: String,
     pub capture_address: String,
-    /// Set when the capture server could not start (e.g. another copy of the app owns the port).
+    /// Set while the capture server can't listen (e.g. another copy of the app owns the port); it keeps trying.
     pub server_error: Option<String>,
 }
 

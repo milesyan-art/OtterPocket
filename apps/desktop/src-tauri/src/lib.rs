@@ -12,8 +12,7 @@ use tauri::{
     http::{Request, Response, StatusCode},
 };
 
-use commands::ServerStatus;
-use server::ExtensionTracker;
+use server::{ExtensionTracker, ServerStatus};
 use setup::{CurrentLibrary, Paths, Setup};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,13 +28,14 @@ pub fn run() {
             let current = Arc::new(CurrentLibrary::default());
             current.replace(library.map(Arc::new));
             let extension = Arc::new(ExtensionTracker::default());
-            let server_error = server::start(current.clone(), extension.clone(), app.handle().clone()).err();
-            if let Some(e) = &server_error {
-                eprintln!("capture server not started: {e}");
+            let server = Arc::new(ServerStatus::default());
+            server::start(current.clone(), extension.clone(), server.clone(), app.handle().clone());
+            if let Some(e) = server.error() {
+                eprintln!("capture server not listening yet, trying again: {e}");
             }
             app.manage(current);
             app.manage(setup);
-            app.manage(ServerStatus(server_error));
+            app.manage(server);
             app.manage(extension);
             Ok(())
         })

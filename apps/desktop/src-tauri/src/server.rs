@@ -5,8 +5,10 @@
 
 use std::{
     io::Read,
+    net::SocketAddr,
     sync::{Arc, Mutex, PoisonError},
     thread,
+    time::Duration,
 };
 
 use tauri::{AppHandle, Emitter};
@@ -21,11 +23,34 @@ use crate::{
 pub const CAPTURE_PORT: u16 = 47600;
 const MAX_BODY_BYTES: u64 = 96 * 1024 * 1024;
 const MAX_HELLO_BYTES: u64 = 64 * 1024;
+/// How often a copy that couldn't get the port tries again.
+const RETRY_EVERY: Duration = Duration::from_secs(2);
 
 /// Emitted to the frontend, with the `CaptureResponse`, whenever the extension saves something.
 pub const LIBRARY_CHANGED: &str = "library-changed";
 /// Emitted to the frontend, with an `ExtensionContact`, whenever the extension gets in touch.
 pub const EXTENSION_SEEN: &str = "extension-seen";
+/// Emitted to the frontend, with the error or null, whenever the capture server starts or stops being able to listen.
+pub const SERVER_STATUS: &str = "capture-server";
+
+/// Why the capture server isn't listening, while it isn't, so the UI can explain why captures don't arrive.
+#[derive(Default)]
+pub struct ServerStatus(Mutex<Option<String>>);
+
+impl ServerStatus {
+    pub fn error(&self) -> Option<String> {
+        let error = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        error.clone()
+    }
+
+    /// Records the new state and says whether it changed.
+    fn set(&self, error: Option<String>) -> bool {
+        let mut current = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let changed = *current != error;
+        *current = error;
+        changed
+    }
+}
 
 /// When the extension last got in touch. Memory only: it is about this computer's Chrome, not the library.
 #[derive(Default)]
@@ -48,18 +73,49 @@ impl ExtensionTracker {
     }
 }
 
-pub fn start(current: Arc<CurrentLibrary>, extension: Arc<ExtensionTracker>, app: AppHandle) -> Result<(), String> {
-    let server = Server::http(("127.0.0.1", CAPTURE_PORT))
-        .map_err(|e| format!("could not listen on 127.0.0.1:{CAPTURE_PORT}: {e}"))?;
-    thread::Builder::new()
-        .name("capture-server".into())
-        .spawn(move || {
-            for request in server.incoming_requests() {
-                handle(&current, &extension, &app, request);
-            }
-        })
-        .map_err(err)?;
-    Ok(())
+/// Starts the capture server on a thread of its own. When the port is taken, usually by another copy of the
+/// app, it keeps trying, so this copy connects by itself as soon as the other one quits.
+pub fn start(current: Arc<CurrentLibrary>, extension: Arc<ExtensionTracker>, status: Arc<ServerStatus>, app: AppHandle) {
+    let address = SocketAddr::from(([127, 0, 0, 1], CAPTURE_PORT));
+    // The first try happens before the window opens, so a busy port shows in the first status it reads.
+    let (first, _) = try_listen(address, &status);
+    let thread_status = status.clone();
+    let spawned = thread::Builder::new().name("capture-server".into()).spawn(move || {
+        let server = first.unwrap_or_else(|| {
+            thread::sleep(RETRY_EVERY);
+            listen(address, &thread_status, RETRY_EVERY, |error| {
+                let _ = app.emit(SERVER_STATUS, error);
+            })
+        });
+        for request in server.incoming_requests() {
+            handle(&current, &extension, &app, request);
+        }
+    });
+    if let Err(e) = spawned {
+        status.set(Some(format!("could not start the capture server: {e}")));
+    }
+}
+
+/// One try at the port. Records the outcome in `status` and says whether that changed it.
+fn try_listen(address: SocketAddr, status: &ServerStatus) -> (Option<Server>, bool) {
+    match Server::http(address) {
+        Ok(server) => (Some(server), status.set(None)),
+        Err(e) => (None, status.set(Some(format!("could not listen on {address}: {e}")))),
+    }
+}
+
+/// Tries the port every `every` until it gets it, calling `changed` whenever the status changes.
+fn listen(address: SocketAddr, status: &ServerStatus, every: Duration, changed: impl Fn(Option<String>)) -> Server {
+    loop {
+        let (server, did_change) = try_listen(address, status);
+        if did_change {
+            changed(status.error());
+        }
+        if let Some(server) = server {
+            return server;
+        }
+        thread::sleep(every);
+    }
 }
 
 fn handle(current: &CurrentLibrary, extension: &ExtensionTracker, app: &AppHandle, mut request: Request) {
@@ -169,4 +225,32 @@ fn header(request: &Request, name: &'static str) -> Option<String> {
 
 fn error_json(message: &str) -> String {
     serde_json::json!({ "error": message }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{net::TcpListener, sync::mpsc};
+
+    use super::*;
+
+    #[test]
+    fn a_busy_port_is_tried_again_until_it_is_free() {
+        // Another copy of the app, stood in for by a plain listener on a free port.
+        let other = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = other.local_addr().unwrap();
+        let status = Arc::new(ServerStatus::default());
+        let (changes, changed) = mpsc::channel();
+        let waiting = status.clone();
+        let listening = thread::spawn(move || {
+            listen(address, &waiting, Duration::from_millis(20), move |error| changes.send(error).unwrap())
+        });
+
+        assert!(changed.recv_timeout(Duration::from_secs(5)).unwrap().is_some(), "says the port is busy");
+        assert!(status.error().is_some());
+        drop(other);
+        assert_eq!(changed.recv_timeout(Duration::from_secs(5)).unwrap(), None, "clears it once it listens");
+        let server = listening.join().unwrap();
+        assert_eq!(server.server_addr().to_ip(), Some(address));
+        assert_eq!(status.error(), None);
+    }
 }
