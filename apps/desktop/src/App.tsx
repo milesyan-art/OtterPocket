@@ -121,6 +121,9 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   // Which board `items` came from: right after a switch they still belong to the previous one.
   const [itemsBoardId, setItemsBoardId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The inspector opens on a click, not on every selection: pressing an item to drag it selects it too.
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectorEl, setInspectorEl] = useState<HTMLElement | null>(null);
   const [grayscale, setGrayscale] = useState(false);
   const [onTop, setOnTop] = useState(false);
   const [fitSignal, setFitSignal] = useState(0);
@@ -135,6 +138,14 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   activeIdRef.current = activeId;
 
   const showError = useCallback((message: string) => setToast({ message }), []);
+
+  // With nothing selected the inspector closes, so a selection that isn't a click (a new save) doesn't reopen it.
+  const select = useCallback((itemId: string | null) => {
+    setSelectedId(itemId);
+    if (!itemId) setInspecting(false);
+  }, []);
+  const inspect = useCallback(() => setInspecting(true), []);
+  const closeInspector = useCallback(() => setInspecting(false), []);
 
   const loadCollections = useCallback(() => api.listCollections().then(setCollections, (e) => showError(String(e))), [showError]);
 
@@ -197,12 +208,12 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   }, [onLibraryLost]);
 
   useEffect(() => {
-    setSelectedId(null);
+    select(null);
     setItems([]);
     setToast((t) => (t?.undo ? null : t));
     setReveal((r) => (r?.boardId === activeId ? r : null));
     void loadBoard(activeId);
-  }, [activeId, loadBoard]);
+  }, [activeId, loadBoard, select]);
 
   // Captures from the extension arrive while the app is open. One saved to the board on screen is brought
   // into view there; one saved elsewhere is shown when its message is clicked.
@@ -247,7 +258,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       }
       await api.removeFromCollection(item.id, activeIdRef.current);
       setPendingRemoval(null);
-      setSelectedId(null);
+      select(null);
       await loadBoard(activeIdRef.current);
       setRevision((r) => r + 1);
     } catch (e) {
@@ -353,7 +364,8 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               selectedId={selectedId}
               reveal={revealHere?.itemId ?? null}
               onRevealed={revealed}
-              onSelect={setSelectedId}
+              onSelect={select}
+              onInspect={inspect}
               onOpenSource={openSourceById}
             />
           ) : (
@@ -365,8 +377,10 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               grayscale={grayscale}
               fitSignal={fitSignal}
               reveal={revealHere}
+              inspector={inspectorEl}
               onRevealed={revealed}
-              onSelect={setSelectedId}
+              onSelect={select}
+              onInspect={inspect}
               onOpenSource={openSourceById}
               onRemove={(id) => {
                 const item = items.find((b) => b.item.id === id)?.item;
@@ -374,6 +388,22 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               }}
               onLayoutChange={saveLayout}
               onViewChange={saveView}
+            />
+          )}
+          {selected && inspecting && (
+            <Inspector
+              ref={setInspectorEl}
+              item={selected}
+              activeId={activeId}
+              collections={collections}
+              revision={revision}
+              onNotesSaved={() => void loadBoard(activeIdRef.current)}
+              onOpenSource={openSource}
+              onRemove={(item) => void removeItem(item)}
+              onReveal={revealItem}
+              onOpenBoard={setActiveId}
+              onError={showError}
+              onClose={closeInspector}
             />
           )}
           <FloatingToolbar
@@ -426,19 +456,6 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
           </FloatingToolbar>
         </div>
       </main>
-
-      <Inspector
-        item={selected}
-        activeId={activeId}
-        collections={collections}
-        revision={revision}
-        onNotesSaved={() => void loadBoard(activeIdRef.current)}
-        onOpenSource={openSource}
-        onRemove={(item) => void removeItem(item)}
-        onReveal={revealItem}
-        onOpenBoard={setActiveId}
-        onError={showError}
-      />
 
       {pendingRemoval && (
         <ConfirmRemoval

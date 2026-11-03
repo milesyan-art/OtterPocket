@@ -94,9 +94,9 @@ kbd {
 
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--inspector-w);
-  /* One row exactly the window's height. Sized by content, a tall inspector (say, a portrait picture with
-     notes) stretched the whole row, and the canvas with it, which slid the board when an item was selected. */
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  /* One row exactly the window's height. Sized by content, a tall column stretched the whole row, and the
+     canvas with it, which slid the board. */
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
@@ -125,8 +125,7 @@ kbd {
 }
 
 /* Space for the macOS traffic lights; also lets you drag the window. */
-.sidebar-top,
-.inspector-top {
+.sidebar-top {
   height: 44px;
   flex: none;
 }
@@ -1147,36 +1146,58 @@ kbd {
 
 /* ---- inspector ------------------------------------------------------------------------ */
 
+/* Floats over the right of the board, only while a reference is open in it, so the board keeps the whole
+   width. It stops short of the floating toolbar (44px tall, 16px up), which it would cover in a narrow window. */
 .inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: var(--inspector-w);
+  max-height: calc(100% - 12px - 72px);
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-left: 1px solid var(--line);
-  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 4;
+  animation: pop-in 120ms ease-out;
 }
 
 .inspector-scroll {
-  flex: 1;
+  flex: 0 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0 18px 24px;
+  padding: 18px 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.inspector-empty {
-  padding: 0 22px;
+/* Sits on the picture's corner rather than taking a row of its own. */
+.inspector-close {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  background: rgba(20, 20, 24, 0.88);
+  border: 1px solid var(--line-strong);
   color: var(--text-2);
 }
 
-.inspector-empty ul {
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  color: var(--muted);
+.inspector-close:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector {
+    animation: none;
+  }
 }
 
 .inspector-preview {

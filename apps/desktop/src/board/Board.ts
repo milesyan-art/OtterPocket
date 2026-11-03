@@ -60,6 +60,8 @@ export interface ScreenRect {
 
 export interface BoardEvents {
   select(itemId: string | null): void;
+  /** An item was pressed and let go without being moved: a click, not the start of arranging. */
+  clicked(itemId: string): void;
   layoutChanged(updates: LayoutUpdate[]): void;
   openSource(itemId: string): void;
   /** Where the selected item is on screen, so React can float its source badge there. */
@@ -127,6 +129,8 @@ export class Board {
   private savedView: BoardView | null = null;
   /** The canvas size last seen, so a resize can keep the middle of the board in the middle. */
   private screenSize = { width: 0, height: 0 };
+  /** How much of the canvas's right side the floating inspector hides, in screen pixels. */
+  private coveredRight = 0;
   private drag: Drag | null = null;
   private wheelAt = 0;
   /** Set by a press: the scroll gesture already under way is ignored until it ends, so it can't slide the board. */
@@ -230,6 +234,12 @@ export class Board {
     if (this.ready) this.drawSelection();
   }
 
+  /** The inspector opened or closed over the right of the canvas. Whatever is selected moves out from under it. */
+  setCoveredRight(width: number): void {
+    this.coveredRight = width;
+    this.keepSelectionClear();
+  }
+
   setGrayscale(on: boolean): void {
     this.grayscale = on;
     if (!this.ready) return;
@@ -287,7 +297,7 @@ export class Board {
     const p = node.data.placement;
     const w = node.w * p.scale;
     const h = node.h * p.scale;
-    const room = { w: width - REVEAL_PAD.side * 2, h: height - REVEAL_PAD.top - REVEAL_PAD.bottom };
+    const room = { w: width - REVEAL_PAD.side * 2 - this.coveredRight, h: height - REVEAL_PAD.top - REVEAL_PAD.bottom };
     const zoom = clamp(Math.min(this.world.scale.x, Math.max(1, room.w) / w, Math.max(1, room.h) / h), MIN_ZOOM, MAX_ZOOM);
     // Where the board would sit at that zoom without panning, then the least panning that brings the item in.
     const view = this.currentView();
@@ -295,9 +305,26 @@ export class Board {
       start < low ? low - start : start + size > high ? high - start - size : 0;
     let x = width / 2 - view.x * zoom;
     let y = height / 2 - view.y * zoom;
-    x += nudge(x + p.x * zoom, w * zoom, REVEAL_PAD.side, width - REVEAL_PAD.side);
+    x += nudge(x + p.x * zoom, w * zoom, REVEAL_PAD.side, width - REVEAL_PAD.side - this.coveredRight);
     y += nudge(y + p.y * zoom, h * zoom, REVEAL_PAD.top, height - REVEAL_PAD.bottom);
     return { x: (width / 2 - x) / zoom, y: (height / 2 - y) / zoom, zoom };
+  }
+
+  /**
+   * Slides the board left just enough that the selected item is clear of the inspector, keeping its left edge
+   * in sight when it's too wide to fit beside it. Only pans: a click shouldn't change the zoom.
+   */
+  private keepSelectionClear(): void {
+    const node = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
+    if (!this.ready || !node || !this.coveredRight || this.drag) return;
+    const zoom = this.world.scale.x;
+    const left = this.world.x + node.root.x * zoom;
+    const right = left + node.w * node.root.scale.x * zoom;
+    const clear = this.app.screen.width - this.coveredRight - REVEAL_PAD.side;
+    const shift = Math.min(right - clear, left - REVEAL_PAD.side);
+    if (shift <= 0) return;
+    const view = this.currentView();
+    this.glideView({ ...view, x: view.x + shift / zoom });
   }
 
   /** Slides the view to `to`, so the eye can follow where it goes. False when there is nothing to watch. */
@@ -745,6 +772,10 @@ export class Board {
       if (!this.world.position.equals(drag.startPos)) this.reportView();
     } else if (drag) {
       this.keepDragged(drag.id);
+      if (drag.kind === 'move' && !drag.moved) {
+        this.events.clicked(drag.id);
+        this.keepSelectionClear();
+      }
     }
     this.revealPending();
   }

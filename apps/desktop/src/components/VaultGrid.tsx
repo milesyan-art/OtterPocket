@@ -11,11 +11,13 @@ interface Props {
   reveal: string | null;
   onRevealed(itemId: string): void;
   onSelect(itemId: string | null): void;
+  /** A click on a card. A newly saved card is selected without one. */
+  onInspect(itemId: string): void;
   onOpenSource(itemId: string): void;
 }
 
 /** The Vault reads like a shelf of cards: the image, why you kept it, and where it came from. */
-export function VaultGrid({ items, selectedId, reveal, onRevealed, onSelect, onOpenSource }: Props) {
+export function VaultGrid({ items, selectedId, reveal, onRevealed, onSelect, onInspect, onOpenSource }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [arrived, setArrived] = useState<string | null>(null);
   const newestFirst = [...items].sort((a, b) => b.placement.addedAt - a.placement.addedAt);
@@ -52,6 +54,7 @@ export function VaultGrid({ items, selectedId, reveal, onRevealed, onSelect, onO
               onClick={(e) => {
                 e.stopPropagation();
                 onSelect(item.id);
+                onInspect(item.id);
               }}
               onDoubleClick={() => onOpenSource(item.id)}
               onAnimationEnd={(e) => e.animationName === 'arrive' && setArrived(null)}

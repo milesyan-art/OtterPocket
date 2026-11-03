@@ -14,8 +14,12 @@ interface Props {
   fitSignal: number;
   /** A newly saved item to bring into view and select, once it is on this board. */
   reveal: { boardId: string; itemId: string } | null;
+  /** The floating inspector while it is open over the board, so what's selected can be kept out from under it. */
+  inspector: HTMLElement | null;
   onRevealed(itemId: string): void;
   onSelect(itemId: string | null): void;
+  /** A click on an item, as opposed to a press that drags it. */
+  onInspect(itemId: string): void;
   onOpenSource(itemId: string): void;
   onRemove(itemId: string): void;
   onLayoutChange(updates: LayoutUpdate[]): void;
@@ -23,7 +27,7 @@ interface Props {
 }
 
 export function BoardCanvas(props: Props) {
-  const { boardId, items, selectedId, grayscale, fitSignal, reveal } = props;
+  const { boardId, items, selectedId, grayscale, fitSignal, reveal, inspector } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
@@ -33,6 +37,7 @@ export function BoardCanvas(props: Props) {
   useEffect(() => {
     const board = new Board({
       select: (id) => latest.current.onSelect(id),
+      clicked: (id) => latest.current.onInspect(id),
       openSource: (id) => latest.current.onOpenSource(id),
       layoutChanged: (updates) => latest.current.onLayoutChange(updates),
       selectionMoved: setBadge,
@@ -54,6 +59,12 @@ export function BoardCanvas(props: Props) {
   useEffect(() => boardRef.current?.setItems(items, boardId, latest.current.view), [items, boardId]);
   useEffect(() => boardRef.current?.select(selectedId), [selectedId]);
   useEffect(() => boardRef.current?.setGrayscale(grayscale), [grayscale]);
+  // Both sit in the same box, so the panel's distance from the right is in the canvas's terms. Offsets, not
+  // rects, so the panel's opening animation doesn't skew it.
+  useEffect(() => {
+    const host = hostRef.current;
+    boardRef.current?.setCoveredRight(inspector && host ? host.offsetWidth - inspector.offsetLeft : 0);
+  }, [inspector]);
   useEffect(() => {
     if (fitSignal) boardRef.current?.fitAll();
   }, [fitSignal]);
