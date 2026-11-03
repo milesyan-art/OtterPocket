@@ -1,6 +1,6 @@
 [package]
 name = "otter-pocket"
-version = "0.1.1"
+version = "0.1.2"
 description = "Keep the references that matter, with a link back to the source"
 authors = []
 edition = "2024"
