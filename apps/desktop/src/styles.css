@@ -13,7 +13,10 @@
   --warning: #f2c46d;
   --radius: 10px;
   --sidebar-w: 248px;
-  --inspector-w: 304px;
+  --inspector-w: 280px;
+  /* The panel and tools that float over the board. */
+  --float-radius: 6px;
+  --float-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   --toolbar-h: 52px;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   font-size: 13px;
@@ -745,10 +748,10 @@ kbd {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: var(--float-radius);
   background: rgba(26, 26, 30, 0.92);
-  border: 1px solid var(--line-strong);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line);
+  box-shadow: var(--float-shadow);
   backdrop-filter: blur(10px);
 }
 
@@ -765,7 +768,7 @@ kbd {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--text-2);
 }
 
@@ -798,10 +801,10 @@ kbd {
   gap: 2px;
   width: 248px;
   padding: 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--float-radius);
   background: #1e1e23;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--float-shadow);
   animation: pop-in 120ms ease-out;
 }
 
@@ -810,7 +813,7 @@ kbd {
   align-items: center;
   gap: 11px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--text);
   font-size: 12.5px;
   text-align: left;
@@ -828,7 +831,7 @@ kbd {
   flex: none;
   width: 48px;
   height: 38px;
-  border-radius: 7px;
+  border-radius: 4px;
   background: #151518;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -1156,12 +1159,20 @@ kbd {
   max-height: calc(100% - 12px - 72px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  /* Kept as crisp as the sidebar: the lighter fill and the sidebar's edge line set it off the canvas, and
+     the small shadow only parts it from a picture underneath. A big soft shadow read as a dark smudge. */
   background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line);
+  border-radius: var(--float-radius);
+  box-shadow: var(--float-shadow);
   z-index: 4;
   animation: pop-in 120ms ease-out;
+}
+
+/* Corners inside the panel stay under its own, or they look soft against it. */
+.inspector button.primary {
+  border-radius: 4px;
 }
 
 .inspector-scroll {
@@ -1174,6 +1185,17 @@ kbd {
   gap: 14px;
 }
 
+/* A thin thumb and no track: a full-height scroll bar weighed the panel down. */
+.inspector-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.inspector-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 5px;
+  background: var(--line-strong) padding-box;
+}
+
 /* Sits on the picture's corner rather than taking a row of its own. */
 .inspector-close {
   position: absolute;
@@ -1182,11 +1204,10 @@ kbd {
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 13px;
-  background: rgba(20, 20, 24, 0.88);
-  border: 1px solid var(--line-strong);
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(20, 20, 24, 0.8);
   color: var(--text-2);
 }
 
@@ -1204,7 +1225,7 @@ kbd {
   width: 100%;
   max-height: 260px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--bg);
 }
 
@@ -1235,7 +1256,7 @@ kbd {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--bg);
   outline: none;
   resize: vertical;
@@ -1255,7 +1276,7 @@ kbd {
   height: 28px;
   margin: -4px -8px;
   padding: 0 8px;
-  border-radius: 7px;
+  border-radius: 4px;
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -1269,7 +1290,7 @@ kbd {
 .why-note {
   margin: -4px -8px;
   padding: 4px 8px 4px 11px;
-  border-radius: 7px;
+  border-radius: 4px;
   box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text-2);
   text-align: left;
@@ -1294,7 +1315,7 @@ kbd {
   margin: -4px -8px;
   padding: 4px 8px 4px 11px;
   border: 1px solid var(--accent);
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--text);
   line-height: 1.45;
@@ -1362,7 +1383,7 @@ button.primary:hover {
   gap: 2px;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--bg);
 }
 
@@ -1372,7 +1393,7 @@ button.primary:hover {
   gap: 10px;
   height: 38px;
   padding: 0 8px 0 6px;
-  border-radius: 7px;
+  border-radius: 4px;
   color: var(--text);
   text-align: left;
 }
@@ -1396,7 +1417,7 @@ button.primary:hover {
   flex: none;
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--panel-2);
   color: var(--text-2);
 }
@@ -1494,7 +1515,7 @@ button.primary:hover {
   gap: 8px;
   height: 30px;
   padding: 0 8px;
-  border-radius: 7px;
+  border-radius: 4px;
   color: var(--text-2);
 }
 
