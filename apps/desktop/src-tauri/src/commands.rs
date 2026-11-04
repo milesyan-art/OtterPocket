@@ -64,6 +64,12 @@ pub fn save_layout(library: Lib, collection_id: String, updates: Vec<LayoutUpdat
     library.get()?.save_layout(&collection_id, &updates)
 }
 
+/// Undo and Redo: puts placements and groups on a board back the way they were.
+#[tauri::command]
+pub fn restore_board(library: Lib, collection_id: String, placements: Vec<PlacementChange>, groups: Vec<Group>) -> Result<()> {
+    library.get()?.restore_board(&collection_id, &placements, &groups)
+}
+
 #[tauri::command]
 pub fn set_board_view(library: Lib, collection_id: String, view: BoardView) -> Result<()> {
     library.get()?.set_board_view(&collection_id, view)

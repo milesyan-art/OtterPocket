@@ -19,7 +19,7 @@ import {
   type SetupAction,
 } from './api';
 import { arrange, freeSpot, gather, type Arrangement, type Box } from './board/arrange';
-import { GROUP_FRAME, groupFrame, itemSize } from './board/Board';
+import { GROUP_FRAME, groupFrame, isTyping, itemSize } from './board/Board';
 import { BoardCanvas } from './components/BoardCanvas';
 import { FloatingToolbar, type Tool } from './components/FloatingToolbar';
 import type { IconName } from './components/Icon';
@@ -29,6 +29,7 @@ import { LibrarySetup } from './components/LibrarySetup';
 import { ProblemCallout, countLabel } from './components/LibraryProblem';
 import { Sidebar } from './components/Sidebar';
 import { VaultGrid } from './components/VaultGrid';
+import { History, type HistoryHooks } from './history';
 
 /** One shared empty list, so a board waiting for its items doesn't see a new array on every render. */
 const NO_ITEMS: BoardItem[] = [];
@@ -77,18 +78,6 @@ interface Toast {
 interface Reveal {
   boardId: string;
   itemId: string;
-}
-
-/** References moved along with a group change, and where they were, for Undo. */
-interface Moves {
-  before: LayoutUpdate[];
-  after: LayoutUpdate[];
-}
-
-interface PendingRemoval {
-  items: Item[];
-  /** How many of them are on no other board, so removing them deletes them from the library. */
-  deleting: number;
 }
 
 interface Notice {
@@ -159,11 +148,9 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   const [inspectorEl, setInspectorEl] = useState<HTMLElement | null>(null);
   const [grayscale, setGrayscale] = useState(false);
   const [onTop, setOnTop] = useState(false);
-  const [fitSignal, setFitSignal] = useState(0);
   const [revision, setRevision] = useState(0);
   const [toast, setToast] = useState<Toast | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
-  const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [libraryProblem, setLibraryProblem] = useState<LibraryProblem | null>(null);
   const [switching, setSwitching] = useState(false);
 
@@ -171,6 +158,16 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   activeIdRef.current = activeId;
 
   const showError = useCallback((message: string) => setToast({ message }), []);
+
+  // One Undo history for the library while it is open (see history.ts). The hooks read this render's state.
+  const historyHooks = useRef<HistoryHooks>(null!);
+  const historyRef = useRef<History | null>(null);
+  historyRef.current ??= new History({
+    pushed: (step) => historyHooks.current.pushed(step),
+    applied: (step, direction) => historyHooks.current.applied(step, direction),
+    error: (message) => historyHooks.current.error(message),
+  });
+  const history = historyRef.current;
 
   // The inspector is about one reference. It closes when there isn't exactly one selected, so a selection that
   // isn't a click (a new save) doesn't reopen it.
@@ -197,6 +194,36 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       ),
     [showError],
   );
+
+  historyHooks.current = {
+    // An Undo offered on a message is for the step it is about; once there's a newer one it would undo that.
+    pushed: () => setToast((t) => (t?.undo ? null : t)),
+    applied: (step, direction) => {
+      setRevision((r) => r + 1);
+      setToast({ message: `${direction === 'undo' ? 'Undone' : 'Redone'}: ${step.label}` });
+      const back = step[direction].placements.flatMap((c) => (c.placement ? c.itemId : []));
+      if (step.boardId === activeIdRef.current) {
+        void loadBoard(step.boardId).then(() => select(back));
+      } else {
+        // Like a design app with pages: Undo shows the board it changes.
+        setActiveId(step.boardId);
+        if (back[0]) setReveal({ boardId: step.boardId, itemId: back[0] });
+      }
+    },
+    error: showError,
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Text fields keep their own Undo.
+      if (!(e.metaKey || e.ctrlKey) || e.code !== 'KeyZ' || e.altKey || isTyping(e.target)) return;
+      e.preventDefault();
+      if (e.shiftKey) history.redo();
+      else history.undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [history]);
 
   // Each board reopens where it was left: views from this session first, then what the library kept.
   // Panning fires constantly, so the library only hears about a view once it settles.
@@ -264,11 +291,12 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
         void loadBoard(targetId);
         setReveal({ boardId: targetId, itemId });
       }
+      history.added(targetId, [itemId], 'Save from the web clipper');
       setRevision((r) => r + 1);
       setToast({ message: `New reference in ${targetName}`, collectionId: targetId, itemId });
     });
     return () => void unlisten.then((stop) => stop());
-  }, [loadBoard, loadCollections]);
+  }, [history, loadBoard, loadCollections]);
 
   useEffect(() => {
     if (!toast) return;
@@ -289,40 +317,50 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     if (item) openSource(item);
   };
 
-  /** Takes references off the board on screen. Asks first when that deletes any of them from the library. */
-  const removeItems = async (targets: Item[], confirmed = false) => {
+  /**
+   * Takes references off the board on screen, without asking: replacing a reference with a better one is
+   * routine, and Undo brings it back (the library keeps it until it is next opened).
+   */
+  const removeItems = async (targets: Item[]) => {
     if (targets.length === 0) return;
     const boardId = activeIdRef.current;
-    if (!confirmed) {
-      try {
-        const boards = await Promise.all(targets.map((item) => api.itemCollections(item.id)));
-        const deleting = boards.filter((b) => b.length <= 1).length;
-        if (deleting > 0) return setPendingRemoval({ items: targets, deleting });
-      } catch (e) {
-        return showError(String(e));
-      }
-    }
+    let message: Toast | null = null;
     try {
-      for (const item of targets) await api.removeFromCollection(item.id, boardId);
+      const { step } = await history.track(boardId, 'Remove', async () => {
+        for (const item of targets) await api.removeFromCollection(item.id, boardId);
+      });
+      const what = targets.length === 1 ? '1 reference' : `${targets.length} references`;
+      if (step) message = { message: `Removed ${what}`, undo: () => history.undoStep(step) };
     } catch (e) {
       // Some may be gone already; the board is reloaded below to show what's left.
       showError(String(e));
     }
-    setPendingRemoval(null);
     select([]);
     await loadBoard(boardId);
     setRevision((r) => r + 1);
+    if (message) setToast(message);
   };
 
-  const saveLayout = (updates: LayoutUpdate[]) => {
-    const boardId = activeIdRef.current;
+  /** Shows references where they're going straight away, ahead of the library saying they're there. */
+  const placeLocally = (updates: LayoutUpdate[]) =>
     setItems((current) =>
       current.map((b) => {
         const u = updates.find((x) => x.itemId === b.item.id);
         return u ? { ...b, placement: { ...b.placement, x: u.x, y: u.y, scale: u.scale, z: u.z } } : b;
       }),
     );
-    return api.saveLayout(boardId, updates).catch((e) => showError(String(e)));
+
+  /** Moves, resizes or restacks references on the board on screen, as one step that Undo takes back. */
+  const saveLayout = (updates: LayoutUpdate[], label = 'Move') => {
+    const boardId = activeIdRef.current;
+    placeLocally(updates);
+    return history.track(boardId, label, () => api.saveLayout(boardId, updates)).then(
+      ({ step }) => step,
+      (e) => {
+        showError(String(e));
+        return null;
+      },
+    );
   };
 
   const boardItems = itemsBoardId === activeId ? items : NO_ITEMS;
@@ -377,19 +415,15 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       const spot = spots.get(item.id)!;
       return { x: spot.x, y: spot.y, scale: spot.w / itemSize(item).w };
     };
-    const before: LayoutUpdate[] = [];
     const after: LayoutUpdate[] = [];
     for (const b of scope) {
       const p = b.placement;
       const { x, y, scale } = target(b);
       if (Math.abs(x - p.x) < 0.01 && Math.abs(y - p.y) < 0.01 && Math.abs(scale / p.scale - 1) < 1e-6) continue;
-      const was = { itemId: b.item.id, x: p.x, y: p.y, scale: p.scale, z: p.z };
-      before.push(was);
-      after.push({ ...was, x, y, scale });
+      after.push({ itemId: b.item.id, x, y, scale, z: p.z });
     }
     if (after.length === 0) return setToast({ message: already });
-    saveLayout(after);
-    setToast({ message: done, undo: () => saveLayout(before) });
+    void saveLayout(after, 'Arrange').then((step) => step && setToast({ message: done, undo: () => history.undoStep(step) }));
   };
 
   const usual = ARRANGEMENTS.find((choice) => choice.kind === arrangement) ?? ARRANGEMENTS[0];
@@ -432,36 +466,29 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       : null;
 
   /**
-   * Saves group changes, then says what changed with a way to take it back. Undo puts back every group the
-   * changes touched: the changed ones, and any that lost references to them.
+   * Saves group changes (and moves that come with them) as one step, then says what changed with a way to
+   * take it back.
    */
   const changeGroups = async (
     changes: GroupChange[],
+    label: string,
     message: string | null,
     then?: (ids: string[]) => void,
-    layout?: Moves,
+    moves?: LayoutUpdate[],
   ) => {
     const boardId = activeIdRef.current;
-    const moving = new Set(changes.flatMap((c) => c.itemIds));
-    const touched = new Set([
-      ...changes.flatMap((c) => c.id ?? []),
-      ...boardItems.flatMap((b) => (moving.has(b.item.id) ? (b.placement.groupId ?? []) : [])),
-    ]);
-    const before: GroupChange[] = [...touched].map((id) => ({ id, title: titleOf(id), itemIds: membersOf(id) }));
+    if (moves) placeLocally(moves);
     try {
-      if (layout) await saveLayout(layout.after);
-      const ids = await api.saveGroups(boardId, changes);
-      // A new group wasn't there before: taking it back empties it, which removes it.
-      changes.forEach((c, i) => c.id === null && before.push({ id: ids[i], title: '', itemIds: [] }));
+      const { result: ids, step } = await history.track(boardId, label, async () => {
+        if (moves) await api.saveLayout(boardId, moves);
+        return api.saveGroups(boardId, changes);
+      });
       await loadBoard(boardId);
-      const undo = async () => {
-        if (layout) await saveLayout(layout.before);
-        await api.saveGroups(boardId, before).then(() => loadBoard(boardId), (e) => showError(String(e)));
-      };
-      if (message) setToast({ message, undo: () => void undo() });
+      if (message && step) setToast({ message, undo: () => history.undoStep(step) });
       then?.(ids);
     } catch (e) {
       showError(String(e));
+      await loadBoard(boardId);
     }
   };
 
@@ -470,7 +497,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
    * reach round other references or groups; otherwise they're dealt into a compact block from their top-left
    * corner, moved to the nearest clear spot when that's taken. `groupId` is the group they'll be (null for a new one).
    */
-  const gatherMoves = (memberIds: string[], groupId: string | null): Moves | undefined => {
+  const gatherMoves = (memberIds: string[], groupId: string | null): LayoutUpdate[] | undefined => {
     const members = new Set(memberIds);
     const boxOf = ({ item, placement: p }: BoardItem): Box => {
       const { w, h } = itemSize(item);
@@ -498,15 +525,10 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     const dealt = gather(mine.map(boxOf));
     const frame = groupFrame(boundsOfBoxes([...dealt.values()]));
     const spot = freeSpot(frame.width, frame.height, frame, obstacles, GROUP_FRAME.pad);
-    const before: LayoutUpdate[] = [];
-    const after: LayoutUpdate[] = [];
-    for (const { item, placement: p } of mine) {
+    return mine.map(({ item, placement: p }) => {
       const to = dealt.get(item.id)!;
-      const was = { itemId: item.id, x: p.x, y: p.y, scale: p.scale, z: p.z };
-      before.push(was);
-      after.push({ ...was, x: to.x + spot.x - frame.x, y: to.y + spot.y - frame.y });
-    }
-    return { before, after };
+      return { itemId: item.id, x: to.x + spot.x - frame.x, y: to.y + spot.y - frame.y, scale: p.scale, z: p.z };
+    });
   };
 
   /**
@@ -524,6 +546,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       const what = [added > 0 && `${added} added`, takenOut > 0 && `${takenOut} taken out`].filter(Boolean).join(', ');
       void changeGroups(
         [{ id: sharedGroup, title: titleOf(sharedGroup), itemIds: picked }],
+        'Update group',
         `${named(sharedGroup)}: ${what}`,
         undefined,
         gatherMoves(picked, sharedGroup),
@@ -532,6 +555,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     }
     void changeGroups(
       [{ id: null, title: '', itemIds: picked }],
+      'Group',
       `Grouped ${picked.length} references`,
       ([id]) => setEditingGroupId(id),
       gatherMoves(picked, null),
@@ -548,11 +572,11 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     const message = wholeGroup
       ? `Ungrouped ${named(wholeGroup)}`
       : `Took ${refs} out of ${pickedGroups.length === 1 ? named(pickedGroups[0]) : 'their groups'}`;
-    void changeGroups(changes, message);
+    void changeGroups(changes, wholeGroup ? 'Ungroup' : 'Take out of group', message);
   };
 
   const renameGroup = (groupId: string, title: string) =>
-    void changeGroups([{ id: groupId, title, itemIds: membersOf(groupId) }], null);
+    void changeGroups([{ id: groupId, title, itemIds: membersOf(groupId) }], 'Rename group', null);
 
   const groupTools: Tool[] = wholeGroup
     ? [
@@ -609,6 +633,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
         onDeleted={(id) => {
           // The active project (or the folder it was in) may be gone; fall back to the Vault.
           void api.listCollections().then((list) => {
+            history.keepOnly(new Set(list.map((c) => c.id)));
             if (!list.some((c) => c.id === activeIdRef.current) || id === activeIdRef.current) setActiveId(VAULT_ID);
           });
         }}
@@ -649,7 +674,6 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               editingGroupId={editingGroupId}
               selectedIds={selectedIds}
               grayscale={grayscale}
-              fitSignal={fitSignal}
               reveal={revealHere}
               inspector={inspectorEl}
               selectionTools={[
@@ -681,6 +705,13 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               onRemove={(item) => void removeItems([item])}
               onReveal={revealItem}
               onOpenBoard={setActiveId}
+              onAddTo={(itemId, boardId) =>
+                history
+                  .track(boardId, `Add to “${collections.find((c) => c.id === boardId)?.name ?? 'board'}”`, () => api.addToCollection(itemId, boardId), {
+                    adds: true,
+                  })
+                  .then(() => setRevision((r) => r + 1))
+              }
               onError={showError}
               onClose={closeInspector}
             />
@@ -690,7 +721,6 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               isVault
                 ? []
                 : [
-                    { id: 'fit', icon: 'fit', label: 'Fit everything', shortcut: 'F', onClick: () => setFitSignal((n) => n + 1) },
                     arrangeTool('arrange'),
                     {
                       id: 'grayscale',
@@ -724,14 +754,6 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
           </FloatingToolbar>
         </div>
       </main>
-
-      {pendingRemoval && (
-        <ConfirmRemoval
-          removal={pendingRemoval}
-          onCancel={() => setPendingRemoval(null)}
-          onConfirm={() => void removeItems(pendingRemoval.items, true)}
-        />
-      )}
 
       {libraryProblem && (
         <ProblemDialog
@@ -792,44 +814,6 @@ function useDialogKeys(keys: { Escape?(): void; Enter?(): void }) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
-}
-
-function ConfirmRemoval({ removal, onCancel, onConfirm }: { removal: PendingRemoval; onCancel(): void; onConfirm(): void }) {
-  useDialogKeys({ Escape: onCancel, Enter: onConfirm });
-
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{removalTitle(removal)}</h3>
-        <p>{removalDetail(removal)}</p>
-        <div className="modal-actions">
-          <button onClick={onCancel}>Cancel</button>
-          <button className="danger solid" onClick={onConfirm} autoFocus>
-            {removal.deleting === removal.items.length ? 'Delete' : 'Remove'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function removalTitle({ items, deleting }: PendingRemoval): string {
-  if (items.length === 1) return `Delete “${items[0].title || items[0].source.pageTitle || 'this reference'}”?`;
-  if (deleting === items.length) return `Delete ${items.length} references?`;
-  return `Remove ${items.length} references from this board?`;
-}
-
-function removalDetail({ items, deleting }: PendingRemoval): string {
-  if (items.length === 1) return "It isn't on any other board, so removing it deletes it and its image file from your library.";
-  if (deleting === items.length) {
-    return "They aren't on any other board, so removing them deletes them and their image files from your library.";
-  }
-  const kept = items.length - deleting;
-  const deleted =
-    deleting === 1
-      ? "1 of them isn't on any other board, so it and its image file are deleted from your library."
-      : `${deleting} of them aren't on any other board, so they and their image files are deleted from your library.`;
-  return `${deleted} ${kept === 1 ? 'The other one is' : `The other ${kept} are`} only taken off this board.`;
 }
 
 interface ProblemDialogProps {

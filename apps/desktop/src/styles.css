@@ -954,6 +954,87 @@ kbd {
   }
 }
 
+/* ---- view controls -------------------------------------------------------------------- */
+
+/* Zoom, fit and help, apart from the main tools, at the bottom right of the board. Level with the main bar. */
+.view-dock {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 6;
+}
+
+/* Tooltips this close to the edge open leftward, so they aren't cut off. */
+.view-dock .tool-tip {
+  left: auto;
+  right: 0;
+  transform: translate(0, 4px);
+}
+
+.view-dock .tool:hover .tool-tip,
+.view-dock .tool:focus-visible .tool-tip {
+  transform: translate(0, 0);
+}
+
+/* The open shortcuts panel already says what the help button is. */
+.view-dock .tool[aria-pressed='true'] .tool-tip {
+  display: none;
+}
+
+.shortcuts {
+  width: 264px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--float-radius);
+  background: #1e1e23;
+  box-shadow: var(--float-shadow);
+  animation: pop-in 120ms ease-out;
+}
+
+.shortcuts h3 {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.shortcuts section + section {
+  margin-top: 12px;
+}
+
+.shortcuts h4 {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+
+.shortcut-keys kbd {
+  margin-right: 0;
+}
+
 /* ---- board ---------------------------------------------------------------------------- */
 
 .board,
