@@ -60,6 +60,12 @@ export interface BoardItem {
   placement: Placement;
 }
 
+/** One item's placement on a board as Undo or Redo puts it back; null takes it off the board. */
+export interface PlacementChange {
+  itemId: string;
+  placement: Placement | null;
+}
+
 export interface LayoutUpdate {
   itemId: string;
   x: number;
@@ -143,6 +149,8 @@ export const api = {
     invoke<void>('remove_from_collection', { itemId, collectionId }),
   saveLayout: (collectionId: string, updates: LayoutUpdate[]) =>
     invoke<void>('save_layout', { collectionId, updates }),
+  restoreBoard: (collectionId: string, placements: PlacementChange[], groups: Group[]) =>
+    invoke<void>('restore_board', { collectionId, placements, groups }),
   setBoardView: (collectionId: string, view: BoardView) => invoke<void>('set_board_view', { collectionId, view }),
   listGroups: (collectionId: string) => invoke<Group[]>('list_groups', { collectionId }),
   /** Each change's group holds exactly its references afterwards; empty groups go. Returns the groups' ids. */

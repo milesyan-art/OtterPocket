@@ -55,6 +55,7 @@ pub fn run() {
             commands::add_to_collection,
             commands::remove_from_collection,
             commands::save_layout,
+            commands::restore_board,
             commands::set_board_view,
             commands::list_groups,
             commands::save_groups,

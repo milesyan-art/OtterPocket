@@ -198,7 +198,15 @@ impl Library {
 
         fs::create_dir_all(root.join(ASSETS_DIR)).map_err(|e| io_problem(&e))?;
         write_readme(root);
-        Ok(Self { root: root.to_path_buf(), db: Mutex::new(conn), _lock: lock })
+        let library = Self { root: root.to_path_buf(), db: Mutex::new(conn), _lock: lock };
+        // What was removed last time is only really deleted now: until then Undo could bring it back.
+        {
+            let db = library.db();
+            if let Err(e) = library.collect_orphans(&db) {
+                eprintln!("Could not clear out removed references: {e}");
+            }
+        }
+        Ok(library)
     }
 
     pub fn root(&self) -> &Path {
@@ -273,14 +281,14 @@ impl Library {
         Ok(())
     }
 
-    /// Deletes a project or folder (and everything nested in it). Items left with no placement go too.
+    /// Deletes a project or folder (and everything nested in it). Items left with no placement are deleted
+    /// the next time the library is opened (see `collect_orphans`).
     pub fn delete_collection(&self, id: &str) -> Result<()> {
         if id == VAULT_ID {
             return Err("the Vault cannot be deleted".into());
         }
-        let db = self.db();
-        db.execute("DELETE FROM collections WHERE id = ?1", params![id]).map_err(err)?;
-        self.collect_orphans(&db)
+        self.db().execute("DELETE FROM collections WHERE id = ?1", params![id]).map_err(err)?;
+        Ok(())
     }
 
     // ---- items -------------------------------------------------------------------------
@@ -411,7 +419,8 @@ impl Library {
         Ok(())
     }
 
-    /// Takes an item off one board. When it is on no board at all, its record and file are removed.
+    /// Takes an item off one board. When it is on no board at all, its record and file stay until the library
+    /// is next opened, so Undo can put it back (see `collect_orphans`).
     pub fn remove_from_collection(&self, item_id: &str, collection_id: &str) -> Result<()> {
         let db = self.db();
         db.execute(
@@ -419,7 +428,79 @@ impl Library {
             params![collection_id, item_id],
         )
         .map_err(err)?;
-        self.collect_orphans(&db)
+        remove_empty_groups(&db)
+    }
+
+    /// Undo and Redo: sets each item's placement on the board to the one given (None takes it off) and makes
+    /// the given groups exist again under their titles. Items taken off every board earlier in this session
+    /// are still in the library, so they come back with their files; one that is gone is skipped.
+    pub fn restore_board(&self, collection_id: &str, placements: &[PlacementChange], groups: &[Group]) -> Result<()> {
+        let mut db = self.db();
+        match collection_kind(&db, collection_id)?.as_deref() {
+            Some("vault" | "project") => {}
+            Some(_) => return Err("only boards can be restored".into()),
+            None => return Err("That board has been deleted.".into()),
+        }
+        let tx = db.transaction().map_err(err)?;
+        for group in groups {
+            if group.id.is_empty() || group.id.len() > 64 {
+                return Err(format!("not a group id: {:?}", group.id));
+            }
+            let title: String = group.title.trim().chars().take(200).collect();
+            let board: Option<String> = tx
+                .query_row("SELECT collection_id FROM board_groups WHERE id = ?1", params![group.id], |r| r.get(0))
+                .optional()
+                .map_err(err)?;
+            match board {
+                Some(board) if board != collection_id => return Err("that group is on another board".into()),
+                Some(_) => {
+                    tx.execute("UPDATE board_groups SET title = ?2 WHERE id = ?1", params![group.id, title])
+                        .map_err(err)?;
+                }
+                None => insert_group(&tx, &group.id, collection_id, &title)?,
+            }
+        }
+        for change in placements {
+            let Some(p) = &change.placement else {
+                tx.execute(
+                    "DELETE FROM placements WHERE collection_id = ?1 AND item_id = ?2",
+                    params![collection_id, change.item_id],
+                )
+                .map_err(err)?;
+                continue;
+            };
+            let item_there: bool = tx
+                .query_row("SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1)", params![change.item_id], |r| r.get(0))
+                .map_err(err)?;
+            if !item_there {
+                continue;
+            }
+            // A group that isn't on this board leaves the item ungrouped rather than failing the whole step.
+            let group_id: Option<&String> = match &p.group_id {
+                Some(id) => {
+                    let here: bool = tx
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM board_groups WHERE id = ?1 AND collection_id = ?2)",
+                            params![id, collection_id],
+                            |r| r.get(0),
+                        )
+                        .map_err(err)?;
+                    here.then_some(id)
+                }
+                None => None,
+            };
+            tx.execute(
+                "INSERT INTO placements (collection_id, item_id, x, y, scale, z, added_at, group_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT (collection_id, item_id) DO UPDATE SET
+                   x = excluded.x, y = excluded.y, scale = excluded.scale, z = excluded.z,
+                   added_at = excluded.added_at, group_id = excluded.group_id",
+                params![collection_id, change.item_id, p.x, p.y, p.scale.max(0.01), p.z, p.added_at, group_id],
+            )
+            .map_err(err)?;
+        }
+        remove_empty_groups(&tx)?;
+        tx.commit().map_err(err)
     }
 
     /// Remembers where a project board was last looked at. A board that is gone is not an error: the
@@ -553,6 +634,8 @@ impl Library {
     }
 
     /// Removes what nothing points at any more: items on no board (and their files), groups with nothing in them.
+    /// Runs when the library is opened, never straight after a removal, so that Undo can still bring a removed
+    /// reference back for as long as the app has the library open.
     fn collect_orphans(&self, db: &Connection) -> Result<()> {
         remove_empty_groups(db)?;
         let mut stmt = db
@@ -1040,7 +1123,48 @@ mod tests {
         assert_eq!(lib.list_board(VAULT_ID).unwrap().len(), 1, "still in the Vault");
         lib.remove_from_collection(&res.item_id, VAULT_ID).unwrap();
         assert!(lib.list_board(VAULT_ID).unwrap().is_empty());
-        assert!(!lib.asset_path(&asset).unwrap().exists(), "file removed with the last placement");
+        assert!(lib.asset_path(&asset).unwrap().exists(), "kept while Undo could still bring it back");
+        let root = lib.root().to_path_buf();
+        drop(lib);
+        let lib = open(&root, false).unwrap();
+        assert_eq!(lib.stats().unwrap().items, 0);
+        assert!(!lib.asset_path(&asset).unwrap().exists(), "deleted the next time the library opens");
+    }
+
+    #[test]
+    fn undo_brings_back_removed_references_with_their_group() {
+        let lib = temp_library("restore");
+        let project = lib.create_collection("P", "project", None).unwrap();
+        let a = lib.save_capture(capture(&project.id, "image", true)).unwrap().item_id;
+        let b = lib.save_capture(capture(&project.id, "artist", false)).unwrap().item_id;
+        let group = lib
+            .save_groups(&project.id, &[GroupChange { id: None, title: "Light".into(), item_ids: vec![a.clone(), b.clone()] }])
+            .unwrap()
+            .remove(0);
+        let before = lib.list_board(&project.id).unwrap();
+
+        lib.remove_from_collection(&a, &project.id).unwrap();
+        lib.remove_from_collection(&b, &project.id).unwrap();
+        assert!(lib.list_groups(&project.id).unwrap().is_empty(), "an emptied group goes");
+
+        let changes: Vec<PlacementChange> = before
+            .iter()
+            .map(|bi| PlacementChange { item_id: bi.item.id.clone(), placement: Some(bi.placement.clone()) })
+            .collect();
+        let groups = [Group { id: group.clone(), title: "Light".into() }];
+        lib.restore_board(&project.id, &changes, &groups).unwrap();
+        let after = lib.list_board(&project.id).unwrap();
+        assert_eq!(after.len(), 2);
+        assert!(after.iter().all(|bi| bi.placement.group_id.as_deref() == Some(group.as_str())));
+        assert_eq!(lib.list_groups(&project.id).unwrap()[0].title, "Light");
+        let asset = after.iter().find(|bi| bi.item.id == a).unwrap().item.asset.clone().unwrap();
+        assert!(lib.asset_path(&asset).unwrap().exists());
+
+        // Redo of a save takes it off again; a board that is gone says so.
+        lib.restore_board(&project.id, &[PlacementChange { item_id: a.clone(), placement: None }], &[]).unwrap();
+        assert_eq!(lib.list_board(&project.id).unwrap().len(), 1);
+        lib.delete_collection(&project.id).unwrap();
+        assert!(lib.restore_board(&project.id, &changes, &[]).is_err());
     }
 
     #[test]

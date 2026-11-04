@@ -123,11 +123,19 @@ pub struct BoardItem {
 }
 
 /// A titled group of references on a project board.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Group {
     pub id: String,
     pub title: String,
+}
+
+/// One item's placement on a board as Undo or Redo puts it back: where it was, or None for not on the board.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacementChange {
+    pub item_id: String,
+    pub placement: Option<Placement>,
 }
 
 /// What a group should be after `save_groups`: these items, under this title. No id makes a new group.

@@ -17,6 +17,8 @@ interface Props {
   onRemove(item: Item): void;
   onReveal(item: Item): void;
   onOpenBoard(collectionId: string): void;
+  /** Puts the reference on another board too, as a step Undo can take back. */
+  onAddTo(itemId: string, collectionId: string): Promise<void>;
   onError(message: string): void;
 }
 
@@ -44,7 +46,7 @@ export function Inspector({ ref, onClose, ...props }: Props & { ref?: Ref<HTMLEl
   );
 }
 
-function ItemDetails({ item, activeId, collections, revision, onNotesSaved, onOpenSource, onRemove, onReveal, onOpenBoard, onError }: Props) {
+function ItemDetails({ item, activeId, collections, revision, onNotesSaved, onOpenSource, onRemove, onReveal, onOpenBoard, onAddTo, onError }: Props) {
   const [title, setTitle] = useState(item.title ?? '');
   const [why, setWhy] = useState(item.why ?? '');
   const [placedIn, setPlacedIn] = useState<string[]>([]);
@@ -61,7 +63,7 @@ function ItemDetails({ item, activeId, collections, revision, onNotesSaved, onOp
 
   const addTo = (collectionId: string) => {
     setAdding(false);
-    api.addToCollection(item.id, collectionId).then(
+    onAddTo(item.id, collectionId).then(
       () => api.itemCollections(item.id).then(setPlacedIn),
       (e) => onError(String(e)),
     );

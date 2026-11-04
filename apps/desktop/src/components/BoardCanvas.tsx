@@ -5,6 +5,7 @@ import type { BoardItem, BoardView, Group, LayoutUpdate } from '../api';
 import { Favicon } from './Favicon';
 import type { Tool } from './FloatingToolbar';
 import { SelectionToolbar } from './SelectionToolbar';
+import { ViewControls } from './ViewControls';
 
 interface Props {
   boardId: string;
@@ -17,7 +18,6 @@ interface Props {
   /** In the order they were picked. */
   selectedIds: string[];
   grayscale: boolean;
-  fitSignal: number;
   /** A newly saved item to bring into view and select, once it is on this board. */
   reveal: { boardId: string; itemId: string } | null;
   /** The floating inspector while it is open over the board, so what's selected can be kept out from under it. */
@@ -42,7 +42,7 @@ interface Props {
 }
 
 export function BoardCanvas(props: Props) {
-  const { boardId, items, groups, editingGroupId, selectedIds, grayscale, fitSignal, reveal, inspector } = props;
+  const { boardId, items, groups, editingGroupId, selectedIds, grayscale, reveal, inspector } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
@@ -89,9 +89,6 @@ export function BoardCanvas(props: Props) {
     const host = hostRef.current;
     boardRef.current?.setCoveredRight(inspector && host ? host.offsetWidth - inspector.offsetLeft : 0);
   }, [inspector]);
-  useEffect(() => {
-    if (fitSignal) boardRef.current?.fitAll();
-  }, [fitSignal]);
   // After setItems, so a reveal that comes with a board switch is kept for the board it is for.
   useEffect(() => {
     if (reveal) boardRef.current?.reveal(reveal.boardId, reveal.itemId);
@@ -158,6 +155,11 @@ export function BoardCanvas(props: Props) {
           groups={props.selectionTools}
         />
       )}
+      <ViewControls
+        onZoomIn={() => boardRef.current?.zoomBy(1.25)}
+        onZoomOut={() => boardRef.current?.zoomBy(0.8)}
+        onFit={() => boardRef.current?.fitAll()}
+      />
     </div>
   );
 }
