@@ -14,7 +14,7 @@ import {
   type PointData,
 } from 'pixi.js';
 import { ITEM_KIND_LABELS, siteName } from '@otterpocket/shared';
-import { api, assetUrl, type BoardItem, type BoardView, type Item, type LayoutUpdate } from '../api';
+import { api, assetUrl, type BoardItem, type BoardView, type Group, type Item, type LayoutUpdate } from '../api';
 
 /**
  * Saved pages (articles and artists) are bookmark cards, in board units: as wide as a typical preview
@@ -50,6 +50,22 @@ const DRAG_THRESHOLD = 4;
 const WHEEL_GESTURE_GAP_MS = 150;
 /** Room (screen px) between the box drawn around several selected items and the items. */
 const GROUP_PAD = 6;
+/** A group title's size and line height, and the room above and below it inside its band, in board units. */
+const GROUP_TITLE = { size: 96, line: 120, room: 44 };
+/**
+ * A group's frame, in board units. The title (a heading on the board, about twice a bookmark card's title so
+ * it can still be read zoomed out) sits in a band along the top with equal room above and below it; under
+ * the band the references get the same room as on the other three sides.
+ */
+export const GROUP_FRAME = {
+  pad: 48,
+  title: GROUP_TITLE.size,
+  line: GROUP_TITLE.line,
+  band: GROUP_TITLE.line + GROUP_TITLE.room * 2,
+  radius: 32,
+};
+/** Group frames and titles sit behind every item. */
+const GROUP_Z = -1_000_000_000;
 const ACCENT = 0x8fb3ff;
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif';
 
@@ -69,13 +85,21 @@ export interface BoardEvents {
   openSource(itemId: string): void;
   /**
    * Where the selection is on screen, so React can float things by it: the selected item, or the box around
-   * several. `held` while it is being moved, scaled or boxed in, when tools floating by it keep out of the way.
+   * several. `held` while it is being moved, scaled or boxed in, or while the press that made it is still down:
+   * tools floating by it keep out of the way until it is let go.
    */
   selectionMoved(rect: ScreenRect | null, held: boolean): void;
   /** The person panned, zoomed or fitted the board. Not called for the automatic fit of a board's first visit. */
   viewChanged(boardId: string, view: BoardView): void;
   /** A newly saved item asked for with `reveal` is now on screen. */
   revealed(itemId: string): void;
+  /** A group's title was double-clicked. */
+  renameGroup(groupId: string): void;
+  /**
+   * Where the title being edited sits on screen, and how big its letters are there, so React can put a
+   * text field over it. Null when no title is being edited, or its group isn't on the board.
+   */
+  titleMoved(rect: ScreenRect | null, fontSize: number): void;
 }
 
 interface Node {
@@ -85,6 +109,20 @@ interface Node {
   w: number;
   h: number;
   data: BoardItem;
+}
+
+interface GroupView {
+  id: string;
+  title: string;
+  frame: Graphics;
+  label: Container;
+  /** The band along the top, title and all: pressing it picks up the whole group. */
+  handle: Container;
+  text: Text;
+  /** The width the title was last fitted into, so it is only measured again when that changes. */
+  fittedTo: number;
+  /** The frame where it was last drawn, in board units; null when the group has nothing on this board. */
+  box: ScreenRect | null;
 }
 
 interface Glide {
@@ -120,6 +158,11 @@ type Drag =
       moved: boolean;
       /** A plain press: let go without moving, it is a click, and selects just the pressed item. */
       plain: boolean;
+      /**
+       * The press made a new selection. Tools floating by the selection wait until it is let go, rather than
+       * popping up for the moment before a drag begins and vanishing again.
+       */
+      fresh: boolean;
     }
   | { kind: 'scale'; ids: string[]; anchor: PointData; startDistance: number; from: Map<string, Spot>; minFactor: number }
   | { kind: 'pan'; start: PointData; startPos: PointData; moved: boolean }
@@ -147,6 +190,12 @@ export class Board {
   private scaleHandle = new Graphics();
   private grayscaleFilter = new ColorMatrixFilter();
   private nodes = new Map<string, Node>();
+  private groups = new Map<string, GroupView>();
+  private groupList: Group[] = [];
+  /** The group whose title React is editing in a text field; its own title is hidden meanwhile. */
+  private editingGroup: string | null = null;
+  /** The group whose top band the pointer is over, shown a little lighter so it reads as the handle. */
+  private hoveredGroup: string | null = null;
   private glides = new Map<string, Glide>();
   private viewGlide: ViewGlide | null = null;
   /** A newly saved item to bring into view as soon as it is on this board. */
@@ -241,6 +290,7 @@ export class Board {
     this.resizeObserver.observe(host);
 
     this.setGrayscale(this.grayscale);
+    this.syncGroups();
     this.sync();
   }
 
@@ -278,6 +328,18 @@ export class Board {
     }
     this.items = items;
     this.sync();
+  }
+
+  /** The board's groups and their titles. Which items are in each comes with the items. */
+  setGroups(groups: Group[]): void {
+    this.groupList = groups;
+    this.syncGroups();
+  }
+
+  /** Hides a group's title while React edits it in a text field over the board; null when done. */
+  editTitle(groupId: string | null): void {
+    this.editingGroup = groupId;
+    if (this.ready) this.drawSelection();
   }
 
   select(itemIds: string[]): void {
@@ -428,7 +490,8 @@ export class Board {
       this.world.position.set(screen.width / 2, screen.height / 2);
       return this.drawSelection();
     }
-    const all = boundsOf([...this.nodes.values()]);
+    let all = boundsOf([...this.nodes.values()]);
+    for (const nodes of this.groupMembers().values()) all = union(all, groupFrame(boundsOf(nodes)));
     const pad = 64;
     const zoom = clamp(Math.min((screen.width - pad * 2) / all.width, (screen.height - pad * 2) / all.height), MIN_ZOOM, 1);
     this.world.scale.set(zoom);
@@ -518,6 +581,137 @@ export class Board {
     this.ripple = null;
     this.rippleRings.clear();
     if (this.ready) this.app.ticker.remove(this.stepRipple);
+  }
+
+  private syncGroups(): void {
+    if (!this.ready) return;
+    const wanted = new Map(this.groupList.map((g) => [g.id, g]));
+    for (const [id, view] of this.groups) {
+      if (wanted.has(id)) continue;
+      view.frame.destroy();
+      view.label.destroy({ children: true });
+      view.handle.destroy();
+      this.groups.delete(id);
+    }
+    for (const group of this.groupList) {
+      let view = this.groups.get(group.id);
+      if (!view) {
+        view = this.createGroupView(group.id);
+        this.groups.set(group.id, view);
+      }
+      if (view.title !== group.title) {
+        view.title = group.title;
+        view.fittedTo = -1;
+      }
+    }
+    this.drawSelection();
+  }
+
+  private createGroupView(id: string): GroupView {
+    const frame = new Graphics();
+    frame.eventMode = 'none';
+    frame.zIndex = GROUP_Z;
+    const text = new Text({
+      text: '',
+      resolution: 2,
+      style: textStyle(GROUP_FRAME.title, GROUP_FRAME.line, 1000, 0xa9a9b4, '600'),
+    });
+    const label = new Container();
+    label.zIndex = GROUP_Z + 1;
+    label.eventMode = 'none';
+    label.addChild(text);
+    // Behind the items like the rest of the frame, so an item laid over the band still gets its own press.
+    const handle = new Container();
+    handle.zIndex = GROUP_Z + 2;
+    handle.eventMode = 'static';
+    handle.on('pointerdown', (e) => this.onGroupDown(id, e));
+    handle.on('pointerover', () => this.hoverGroup(id));
+    handle.on('pointerout', () => this.hoveredGroup === id && this.hoverGroup(null));
+    this.world.addChild(frame, label, handle);
+    return { id, title: '', frame, label, handle, text, fittedTo: -1, box: null };
+  }
+
+  private hoverGroup(groupId: string | null): void {
+    this.hoveredGroup = groupId;
+    this.drawSelection();
+  }
+
+  /** Each group's items, by group id. */
+  private groupMembers(): Map<string, Node[]> {
+    const members = new Map<string, Node[]>();
+    for (const node of this.nodes.values()) {
+      const id = node.data.placement.groupId;
+      if (!id) continue;
+      const list = members.get(id);
+      if (list) list.push(node);
+      else members.set(id, [node]);
+    }
+    return members;
+  }
+
+  /**
+   * Draws each group's frame around its items as they are now (mid-drag too), with its title in a band at
+   * the top that is a shade lighter, so it reads as the place to pick the group up; lighter still under the
+   * pointer. A group whose items are all selected is outlined in the selection colour.
+   */
+  private drawGroups(members: Map<string, Node[]>): void {
+    const zoom = this.world.scale.x;
+    const selected = new Set(this.selected);
+    for (const view of this.groups.values()) {
+      const nodes = members.get(view.id);
+      view.frame.clear();
+      if (!nodes) {
+        view.box = null;
+        view.label.visible = false;
+        view.handle.visible = false;
+        continue;
+      }
+      const box = groupFrame(boundsOf(nodes));
+      view.box = box;
+      const whole = nodes.every((n) => selected.has(n.id));
+      const hovered = view.id === this.hoveredGroup;
+      const { radius: r, band } = GROUP_FRAME;
+      const { x, y, width: w } = box;
+      view.frame.roundRect(x, y, w, box.height, r).fill({ color: 0xffffff, alpha: 0.025 });
+      view.frame
+        .moveTo(x, y + band)
+        .lineTo(x, y + r)
+        .arcTo(x, y, x + r, y, r)
+        .lineTo(x + w - r, y)
+        .arcTo(x + w, y, x + w, y + r, r)
+        .lineTo(x + w, y + band)
+        .closePath()
+        .fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
+      view.frame
+        .roundRect(x, y, w, box.height, r)
+        .stroke({ width: 1.5 / zoom, color: whole ? ACCENT : hovered ? 0x7c7c88 : 0x4a4a55, alpha: whole ? 0.9 : 0.8 });
+      const fill = view.title ? (hovered ? 0xececf0 : 0xa9a9b4) : hovered ? 0xa9a9b4 : 0x74747f;
+      if (view.text.style.fill !== fill) view.text.style.fill = fill;
+      view.handle.position.set(x, y);
+      view.handle.hitArea = new Rectangle(0, 0, w, band);
+      view.handle.visible = true;
+      this.fitTitle(view, box.width - GROUP_FRAME.pad * 2);
+      view.label.position.set(box.x + GROUP_FRAME.pad, box.y + (band - view.text.height) / 2);
+      view.label.visible = view.id !== this.editingGroup;
+    }
+
+    const editing = this.editingGroup ? this.groups.get(this.editingGroup) : undefined;
+    if (!editing?.box) return this.events.titleMoved(null, 0);
+    const { pad, band, title, line: lineHeight } = GROUP_FRAME;
+    const top = editing.box.y + (band - lineHeight) / 2;
+    const a = this.world.toGlobal({ x: editing.box.x + pad, y: top });
+    const b = this.world.toGlobal({ x: editing.box.x + editing.box.width - pad, y: top + lineHeight });
+    this.events.titleMoved({ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }, title * zoom);
+  }
+
+  /** The title cut to one line `width` wide, ending in "…" when it doesn't fit. Only measured when it changes. */
+  private fitTitle(view: GroupView, width: number): void {
+    const w = Math.max(1, Math.round(width));
+    if (w === view.fittedTo) return;
+    view.fittedTo = w;
+    const style = view.text.style;
+    style.wordWrapWidth = w;
+    view.text.text = clampLines(view.title || 'Untitled group', style, 1);
   }
 
   private createNode(data: BoardItem): Node {
@@ -733,7 +927,8 @@ export class Board {
     }
     this.lastDown = toggle ? { id: '', time: 0 } : { id: node.id, time: now };
 
-    const wasSelected = this.selected.includes(node.id);
+    const before = this.selected;
+    const wasSelected = before.includes(node.id);
     if (toggle && wasSelected) return this.setSelection(this.selected.filter((id) => id !== node.id));
     if (toggle) this.setSelection([...this.selected, node.id]);
     // Pressing one of several selected items keeps them all, so they can be dragged together.
@@ -750,6 +945,48 @@ export class Board {
       start: e.global.clone(),
       moved: false,
       plain: !toggle,
+      fresh: this.selected !== before,
+    };
+    this.drawSelection();
+  }
+
+  /**
+   * A press on a group's top band picks up the whole group: it selects the group's items (Shift or ⌘ adds them
+   * to the selection) and dragging moves them together. A double-click renames the group.
+   */
+  private onGroupDown(groupId: string, e: FederatedPointerEvent): void {
+    if (e.button !== 0 || this.spaceDown) return; // pans, as on an item
+    e.stopPropagation();
+    this.stopViewGlide();
+    this.wheelHeld = true;
+    this.finishGlides();
+    const now = performance.now();
+    const key = `group:${groupId}`;
+    if (this.lastDown.id === key && now - this.lastDown.time < DOUBLE_CLICK_MS) {
+      this.lastDown = { id: '', time: 0 };
+      this.events.renameGroup(groupId);
+      return;
+    }
+    this.lastDown = { id: key, time: now };
+    const members = (this.groupMembers().get(groupId) ?? [])
+      .sort((a, b) => a.data.placement.z - b.data.placement.z)
+      .map((n) => n.id);
+    if (members.length === 0) return;
+    const adding = e.shiftKey || e.metaKey;
+    const before = this.selected;
+    this.setSelection(adding ? [...this.selected, ...members.filter((id) => !this.selected.includes(id))] : members);
+    const ids = [...this.selected];
+    this.drag = {
+      kind: 'move',
+      ids,
+      pressed: '',
+      grab: this.world.toLocal(e.global),
+      from: this.spotsOf(ids),
+      raised: this.bringToFront(ids),
+      start: e.global.clone(),
+      moved: false,
+      plain: false,
+      fresh: this.selected !== before,
     };
     this.drawSelection();
   }
@@ -991,11 +1228,14 @@ export class Board {
   }
 
   /**
-   * Outlines each selected item. Several selected also get a box around them all; the handle that scales
-   * the selection sits on its bottom-right corner.
+   * Draws the groups, then outlines each selected item. Several selected also get a box around them all,
+   * reaching round the frames of groups that are wholly selected; a selection that is exactly one group
+   * has its frame for that box. The handle that scales the selection sits on the bottom-right corner.
    */
   private drawSelection(): void {
     if (!this.ready) return;
+    const members = this.groupMembers();
+    this.drawGroups(members);
     const nodes = this.selectedNodes();
     this.selectionOutline.clear();
     this.scaleHandle.clear();
@@ -1005,12 +1245,22 @@ export class Board {
       return;
     }
     const zoom = this.world.scale.x;
+    let box = boundsOf(nodes);
+    let oneGroup = false;
+    if (nodes.length > 1) {
+      const selected = new Set(this.selected);
+      for (const [id, groupNodes] of members) {
+        if (!groupNodes.every((n) => selected.has(n.id))) continue;
+        box = union(box, this.groups.get(id)?.box ?? groupFrame(boundsOf(groupNodes)));
+        oneGroup = groupNodes.length === nodes.length;
+      }
+    }
+    // Outlined even when the selection is one group: its frame can reach round references that aren't in it.
     for (const n of nodes) {
       const s = n.root.scale.x;
       this.selectionOutline.rect(n.root.x, n.root.y, n.w * s, n.h * s).stroke({ width: 2 / zoom, color: ACCENT, alignment: 1 });
     }
-    let box = boundsOf(nodes);
-    if (nodes.length > 1) {
+    if (nodes.length > 1 && !oneGroup) {
       const pad = GROUP_PAD / zoom;
       box = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
       this.selectionOutline
@@ -1028,7 +1278,8 @@ export class Board {
     const topLeft = this.world.toGlobal({ x: box.x, y: box.y });
     const bottomRight = this.world.toGlobal({ x: box.x + box.width, y: box.y + box.height });
     const drag = this.drag;
-    const held = !!drag && drag.kind !== 'pan' && (drag.kind === 'scale' || drag.moved);
+    const held =
+      !!drag && drag.kind !== 'pan' && (drag.kind === 'scale' || drag.moved || (drag.kind === 'move' && drag.fresh));
     this.events.selectionMoved(
       { x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y },
       held,
@@ -1047,6 +1298,18 @@ function boundsOf(nodes: Node[]): ScreenRect {
     maxY = Math.max(maxY, n.root.y + n.h * s);
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** A group's frame around the box its items fill, in board units: room on every side and the title band on top. */
+export function groupFrame(items: ScreenRect): ScreenRect {
+  const { pad, band } = GROUP_FRAME;
+  return { x: items.x - pad, y: items.y - pad - band, width: items.width + pad * 2, height: items.height + pad * 2 + band };
+}
+
+function union(a: ScreenRect, b: ScreenRect): ScreenRect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
 }
 
 function boxBetween(a: PointData, b: PointData): ScreenRect {

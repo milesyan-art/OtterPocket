@@ -56,6 +56,8 @@ pub fn run() {
             commands::remove_from_collection,
             commands::save_layout,
             commands::set_board_view,
+            commands::list_groups,
+            commands::save_groups,
             commands::reveal_in_folder,
             commands::open_privacy_settings,
             commands::show_pointer,

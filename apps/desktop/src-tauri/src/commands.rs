@@ -80,6 +80,16 @@ pub fn reveal_in_folder(app: AppHandle, library: Lib, asset: Option<String>) -> 
     app.opener().reveal_item_in_dir(path).map_err(err)
 }
 
+#[tauri::command]
+pub fn list_groups(library: Lib, collection_id: String) -> Result<Vec<Group>> {
+    library.get()?.list_groups(&collection_id)
+}
+
+#[tauri::command]
+pub fn save_groups(library: Lib, collection_id: String, changes: Vec<GroupChange>) -> Result<Vec<String>> {
+    library.get()?.save_groups(&collection_id, &changes)
+}
+
 /// macOS: the Files & Folders privacy pane, where people let Otter Pocket into Documents.
 #[tauri::command]
 pub fn open_privacy_settings(app: AppHandle) -> Result<()> {

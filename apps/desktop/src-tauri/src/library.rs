@@ -78,6 +78,16 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE collections ADD COLUMN view_x REAL;
      ALTER TABLE collections ADD COLUMN view_y REAL;
      ALTER TABLE collections ADD COLUMN view_zoom REAL;",
+    // 3: titled groups on project boards. A placement is in at most one group, on its own board.
+    "CREATE TABLE board_groups (
+       id            TEXT PRIMARY KEY,
+       collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+       title         TEXT NOT NULL DEFAULT '',
+       created_at    INTEGER NOT NULL
+     );
+     CREATE INDEX board_groups_by_collection ON board_groups(collection_id);
+     ALTER TABLE placements ADD COLUMN group_id TEXT REFERENCES board_groups(id) ON DELETE SET NULL;
+     CREATE INDEX placements_by_group ON placements(group_id);",
 ];
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
@@ -339,7 +349,7 @@ impl Library {
         let db = self.db();
         let mut stmt = db
             .prepare(&format!(
-                "SELECT {ITEM_COLUMNS}, p.x, p.y, p.scale, p.z, p.added_at
+                "SELECT {ITEM_COLUMNS}, p.x, p.y, p.scale, p.z, p.added_at, p.group_id
                  FROM placements p JOIN items i ON i.id = p.item_id
                  WHERE p.collection_id = ?1
                  ORDER BY p.z"
@@ -355,6 +365,7 @@ impl Library {
                         scale: r.get(18)?,
                         z: r.get(19)?,
                         added_at: r.get(20)?,
+                        group_id: r.get(21)?,
                     },
                 })
             })
@@ -444,6 +455,75 @@ impl Library {
         tx.commit().map_err(err)
     }
 
+    // ---- groups ------------------------------------------------------------------------
+
+    /// The titled groups on a project board, oldest first. Which items are in each is on their placements.
+    pub fn list_groups(&self, collection_id: &str) -> Result<Vec<Group>> {
+        let db = self.db();
+        let mut stmt = db
+            .prepare("SELECT id, title FROM board_groups WHERE collection_id = ?1 ORDER BY created_at, id")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![collection_id], |r| Ok(Group { id: r.get(0)?, title: r.get(1)? }))
+            .map_err(err)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(err)
+    }
+
+    /// Sets groups on a project board. Afterwards each group in `changes` holds exactly its `item_ids`
+    /// (taken from any other group they were in) under its title. A change with no id makes a new group;
+    /// one whose group is gone makes it again with that id, which is how Undo brings a group back. Groups
+    /// left with nothing in them are removed. Returns each change's group id, in order.
+    pub fn save_groups(&self, collection_id: &str, changes: &[GroupChange]) -> Result<Vec<String>> {
+        let mut db = self.db();
+        if collection_kind(&db, collection_id)?.as_deref() != Some("project") {
+            return Err("groups can only be made on a project board".into());
+        }
+        let tx = db.transaction().map_err(err)?;
+        let mut ids = Vec::with_capacity(changes.len());
+        for change in changes {
+            let title: String = change.title.trim().chars().take(200).collect();
+            let id = match &change.id {
+                Some(id) if id.is_empty() || id.len() > 64 => return Err(format!("not a group id: {id:?}")),
+                Some(id) => {
+                    let board: Option<String> = tx
+                        .query_row("SELECT collection_id FROM board_groups WHERE id = ?1", params![id], |r| r.get(0))
+                        .optional()
+                        .map_err(err)?;
+                    match board {
+                        Some(board) if board != collection_id => return Err("that group is on another board".into()),
+                        Some(_) => {
+                            tx.execute("UPDATE board_groups SET title = ?2 WHERE id = ?1", params![id, title])
+                                .map_err(err)?;
+                        }
+                        None => insert_group(&tx, id, collection_id, &title)?,
+                    }
+                    id.clone()
+                }
+                None => {
+                    let id = new_id();
+                    insert_group(&tx, &id, collection_id, &title)?;
+                    id
+                }
+            };
+            tx.execute(
+                "UPDATE placements SET group_id = NULL WHERE collection_id = ?1 AND group_id = ?2",
+                params![collection_id, id],
+            )
+            .map_err(err)?;
+            for item_id in &change.item_ids {
+                tx.execute(
+                    "UPDATE placements SET group_id = ?3 WHERE collection_id = ?1 AND item_id = ?2",
+                    params![collection_id, item_id, id],
+                )
+                .map_err(err)?;
+            }
+            ids.push(id);
+        }
+        remove_empty_groups(&tx)?;
+        tx.commit().map_err(err)?;
+        Ok(ids)
+    }
+
     // ---- files -------------------------------------------------------------------------
 
     /// Writes image bytes once per unique content; returns the path relative to the library root.
@@ -472,7 +552,9 @@ impl Library {
         safe.then(|| self.root.join(relative))
     }
 
+    /// Removes what nothing points at any more: items on no board (and their files), groups with nothing in them.
     fn collect_orphans(&self, db: &Connection) -> Result<()> {
+        remove_empty_groups(db)?;
         let mut stmt = db
             .prepare(
                 "SELECT id, asset FROM items i
@@ -536,6 +618,24 @@ fn collection_from_row(r: &Row) -> rusqlite::Result<Collection> {
             _ => None,
         },
     })
+}
+
+fn insert_group(db: &Connection, id: &str, collection_id: &str, title: &str) -> Result<()> {
+    db.execute(
+        "INSERT INTO board_groups (id, collection_id, title, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, collection_id, title, now()],
+    )
+    .map(|_| ())
+    .map_err(err)
+}
+
+fn remove_empty_groups(db: &Connection) -> Result<()> {
+    db.execute(
+        "DELETE FROM board_groups WHERE NOT EXISTS (SELECT 1 FROM placements p WHERE p.group_id = board_groups.id)",
+        [],
+    )
+    .map(|_| ())
+    .map_err(err)
 }
 
 fn collection_kind(db: &Connection, id: &str) -> Result<Option<String>> {
@@ -941,6 +1041,79 @@ mod tests {
         lib.remove_from_collection(&res.item_id, VAULT_ID).unwrap();
         assert!(lib.list_board(VAULT_ID).unwrap().is_empty());
         assert!(!lib.asset_path(&asset).unwrap().exists(), "file removed with the last placement");
+    }
+
+    #[test]
+    fn groups_hold_exactly_what_they_are_given() {
+        let lib = temp_library("groups");
+        let project = lib.create_collection("P", "project", None).unwrap();
+        let ids: Vec<String> =
+            (0..6).map(|_| lib.save_capture(capture(&project.id, "image", true)).unwrap().item_id).collect();
+        let groups_of_items = || -> Vec<Option<String>> {
+            let board = lib.list_board(&project.id).unwrap();
+            ids.iter().map(|id| board.iter().find(|b| &b.item.id == id).unwrap().placement.group_id.clone()).collect()
+        };
+        let change = |id: Option<&str>, title: &str, items: &[usize]| GroupChange {
+            id: id.map(String::from),
+            title: title.into(),
+            item_ids: items.iter().map(|&i| ids[i].clone()).collect(),
+        };
+
+        // A, B and C become "Lighting".
+        let lighting = lib.save_groups(&project.id, &[change(None, "  Lighting ", &[0, 1, 2])]).unwrap().remove(0);
+        let groups = lib.list_groups(&project.id).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].title, "Lighting");
+        let l = Some(lighting.clone());
+        assert_eq!(groups_of_items(), [l.clone(), l.clone(), l.clone(), None, None, None]);
+
+        // C, D, E and F: the same group, with A and B taken out.
+        lib.save_groups(&project.id, &[change(Some(&lighting), "Lighting", &[2, 3, 4, 5])]).unwrap();
+        assert_eq!(groups_of_items(), [None, None, l.clone(), l.clone(), l.clone(), l.clone()]);
+
+        // A new group takes E and F from it: each item is in one group at most.
+        let faces = lib.save_groups(&project.id, &[change(None, "Faces", &[4, 5])]).unwrap().remove(0);
+        let f = Some(faces.clone());
+        assert_eq!(groups_of_items(), [None, None, l.clone(), l.clone(), f.clone(), f.clone()]);
+
+        // Ungrouping empties it, which removes it; Undo makes it again with the same id and title.
+        lib.save_groups(&project.id, &[change(Some(&faces), "Faces", &[])]).unwrap();
+        assert_eq!(lib.list_groups(&project.id).unwrap().len(), 1);
+        lib.save_groups(&project.id, &[change(Some(&faces), "Faces", &[4, 5])]).unwrap();
+        assert!(lib.list_groups(&project.id).unwrap().iter().any(|g| g.id == faces && g.title == "Faces"));
+        assert_eq!(groups_of_items(), [None, None, l.clone(), l.clone(), f.clone(), f.clone()]);
+
+        // Taking a group's last items off the board removes the group too.
+        for i in [4, 5] {
+            lib.remove_from_collection(&ids[i], &project.id).unwrap();
+        }
+        let left: Vec<String> = lib.list_groups(&project.id).unwrap().into_iter().map(|g| g.id).collect();
+        assert_eq!(left, [lighting]);
+
+        // Deleting the board deletes its groups.
+        lib.delete_collection(&project.id).unwrap();
+        assert!(lib.list_groups(&project.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn groups_stay_on_their_own_project_board() {
+        let lib = temp_library("group-boards");
+        let a = lib.create_collection("A", "project", None).unwrap();
+        let b = lib.create_collection("B", "project", None).unwrap();
+        let on_a = lib.save_capture(capture(&a.id, "image", true)).unwrap().item_id;
+        let on_b = lib.save_capture(capture(&b.id, "image", true)).unwrap().item_id;
+        let change = |id: Option<String>, items: &[&String]| GroupChange {
+            id,
+            title: "G".into(),
+            item_ids: items.iter().map(|s| s.to_string()).collect(),
+        };
+
+        assert!(lib.save_groups(VAULT_ID, &[change(None, &[&on_a])]).is_err(), "no groups in the Vault");
+        // An item that isn't on the board is left out.
+        let g = lib.save_groups(&a.id, &[change(None, &[&on_a, &on_b])]).unwrap().remove(0);
+        assert_eq!(lib.list_board(&a.id).unwrap()[0].placement.group_id.as_deref(), Some(g.as_str()));
+        assert_eq!(lib.list_board(&b.id).unwrap()[0].placement.group_id, None);
+        assert!(lib.save_groups(&b.id, &[change(Some(g), &[&on_b])]).is_err(), "a group belongs to one board");
     }
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {

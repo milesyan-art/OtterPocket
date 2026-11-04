@@ -7,21 +7,29 @@ export interface ToolOption {
   hint?: string;
   /** A small picture of what the option does, shown in place of an icon. */
   sample: ReactNode;
+  /** The one the tool's own button runs, ticked in the menu. */
+  current?: boolean;
   onClick(): void;
 }
 
 export interface Tool {
   id: string;
-  icon: IconName;
+  icon?: IconName;
+  /** Words shown on the button, for actions an icon can't say (e.g. which group it changes). */
+  text?: string;
   label: string;
   /** Shown in the tooltip, e.g. "F". */
   shortcut?: string;
   /** For on/off tools: whether it is on. Leave out for one-shot actions. */
   pressed?: boolean;
-  /** Choices that open above the bar when the tool is clicked; picking one runs it. */
+  /**
+   * Choices that open in a menu; picking one runs it. Without `onClick` the tool's button opens the menu.
+   * With it the button runs `onClick` straight away and a small arrow beside it opens the menu.
+   */
   options?: ToolOption[];
-  /** For tools without options. */
   onClick?(): void;
+  /** The tooltip of the arrow that opens the menu, when there is one. */
+  optionsLabel?: string;
 }
 
 interface Props {
@@ -94,6 +102,11 @@ export function ToolBar({ groups, menuSide = 'above', label = 'Tools', start }: 
             <span>{option.label}</span>
             {option.hint && <span className="tool-menu-hint">{option.hint}</span>}
           </span>
+          {option.current && (
+            <span className="tool-menu-current" aria-label="Default">
+              <Icon name="check" size={14} />
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -111,22 +124,50 @@ export function ToolBar({ groups, menuSide = 'above', label = 'Tools', start }: 
               {i > 0 && <span className="float-toolbar-divider" aria-hidden />}
               {group.map((tool) => {
                 const open = openId === tool.id;
+                const toggle = () => setOpenId(open ? null : tool.id);
+                const tip = (
+                  <span className="tool-tip" aria-hidden>
+                    {tool.label}
+                    {tool.shortcut && <kbd>{tool.shortcut}</kbd>}
+                  </span>
+                );
+                if (tool.options && tool.onClick) {
+                  return (
+                    <span key={tool.id} className="tool-split">
+                      <button type="button" className="tool" aria-label={tool.label} onClick={tool.onClick}>
+                        {tool.icon && <Icon name={tool.icon} size={17} />}
+                        {tip}
+                      </button>
+                      <button
+                        type="button"
+                        className={`tool tool-more ${menuSide}`}
+                        aria-label={tool.optionsLabel ?? 'More'}
+                        aria-haspopup="menu"
+                        aria-expanded={open}
+                        onClick={toggle}
+                      >
+                        <Icon name="chevron" size={11} />
+                        <span className="tool-tip" aria-hidden>
+                          {tool.optionsLabel ?? 'More'}
+                        </span>
+                      </button>
+                    </span>
+                  );
+                }
                 return (
                   <button
                     key={tool.id}
                     type="button"
-                    className="tool"
+                    className={tool.text ? 'tool has-text' : 'tool'}
                     aria-label={tool.label}
                     aria-pressed={tool.pressed}
                     aria-haspopup={tool.options ? 'menu' : undefined}
                     aria-expanded={tool.options ? open : undefined}
-                    onClick={tool.options ? () => setOpenId(open ? null : tool.id) : tool.onClick}
+                    onClick={tool.options ? toggle : tool.onClick}
                   >
-                    <Icon name={tool.icon} size={17} />
-                    <span className="tool-tip" aria-hidden>
-                      {tool.label}
-                      {tool.shortcut && <kbd>{tool.shortcut}</kbd>}
-                    </span>
+                    {tool.icon && <Icon name={tool.icon} size={tool.text ? 15 : 17} />}
+                    {tool.text && <span className="tool-text">{tool.text}</span>}
+                    {tip}
                   </button>
                 );
               })}

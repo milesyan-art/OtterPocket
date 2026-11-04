@@ -860,6 +860,53 @@ kbd {
   outline-offset: 1px;
 }
 
+/* A tool that runs its usual choice when clicked, with a narrow arrow beside it for the others. */
+.tool-split {
+  display: flex;
+}
+
+.tool.tool-more {
+  width: 16px;
+  margin-left: -2px;
+  color: var(--muted);
+}
+
+/* The arrow points to where the menu opens; it needs no corner mark. */
+.tool.tool-more.above svg {
+  transform: rotate(-90deg);
+}
+
+.tool.tool-more.below svg {
+  transform: rotate(90deg);
+}
+
+.tool.tool-more::after {
+  display: none;
+}
+
+.tool-menu-current {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* A tool that says what it does in words, e.g. which group it changes. */
+.tool.has-text {
+  display: flex;
+  gap: 6px;
+  width: auto;
+  max-width: 220px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.tool-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Shows after a short hover, like a design app's tooltips, instead of the slow system one. */
 .tool-tip {
   position: absolute;
@@ -966,6 +1013,26 @@ kbd {
 
 .badge-time {
   color: var(--accent);
+}
+
+/* A group's title being typed: laid over the heading and set like it, marked only by the caret and a fine line. */
+.group-title-field {
+  position: absolute;
+  z-index: 4;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 rgba(143, 179, 255, 0.55);
+  color: var(--text);
+  caret-color: var(--accent);
+  font-family: inherit;
+  font-weight: 600;
+  outline: none;
+}
+
+.group-title-field::placeholder {
+  color: var(--muted);
 }
 
 /* Tools for what's selected, attached to the box around the selection; the board places the bar. */

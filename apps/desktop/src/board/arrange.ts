@@ -61,6 +61,52 @@ export function arrange(kind: Arrangement, boxes: Box[]): Map<string, Box> {
   return new Map(laid.map((b) => [b.id, { ...b, x: from.x + b.x - to.x, y: from.y + b.y - to.y }]));
 }
 
+/**
+ * Brings scattered items together into a compact block, keeping their sizes and reading order: rows of
+ * about √n with the even gap, like a pile dealt out. The block starts at the items' top-left corner.
+ */
+export function gather(boxes: Box[]): Map<string, Box> {
+  if (boxes.length === 0) return new Map();
+  const typical = median(boxes.map((b) => Math.min(b.w, b.h)));
+  const laid = pile(boxes, { gap: typical * GAP, section: typical * SECTION });
+  const from = bounds(boxes);
+  return new Map([...laid.spots].map(([id, b]) => [id, { ...b, x: from.x + b.x, y: from.y + b.y }]));
+}
+
+/**
+ * The top-left corner nearest `near` where a block `w` × `h` covers none of `obstacles`, keeping `gap`
+ * from each: `near` itself when that is clear, or else a spot beside, above or below one of them.
+ */
+export function freeSpot(w: number, h: number, near: { x: number; y: number }, obstacles: Box[], gap: number) {
+  const clear = (x: number, y: number) =>
+    obstacles.every((o) => x + w + gap <= o.x || o.x + o.w + gap <= x || y + h + gap <= o.y || o.y + o.h + gap <= y);
+  if (clear(near.x, near.y)) return near;
+  const candidates: { x: number; y: number }[] = [];
+  for (const o of obstacles) {
+    const right = o.x + o.w + gap;
+    const left = o.x - w - gap;
+    const below = o.y + o.h + gap;
+    const above = o.y - h - gap;
+    candidates.push(
+      { x: right, y: near.y }, { x: right, y: o.y },
+      { x: left, y: near.y }, { x: left, y: o.y },
+      { x: near.x, y: below }, { x: o.x, y: below },
+      { x: near.x, y: above }, { x: o.x, y: above },
+    );
+  }
+  // Past everything on the right is always clear.
+  let best = { x: Math.max(...obstacles.map((o) => o.x + o.w)) + gap, y: near.y };
+  let bestDistance = Math.hypot(best.x - near.x, best.y - near.y);
+  for (const c of candidates) {
+    const distance = Math.hypot(c.x - near.x, c.y - near.y);
+    if (distance < bestDistance && clear(c.x, c.y)) {
+      best = c;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 // ---- tidy ------------------------------------------------------------------------------
 //
 // The board is read the way a page is read for its layout (a recursive XY cut): find the clear lanes of

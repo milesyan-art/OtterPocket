@@ -110,6 +110,9 @@ pub struct Placement {
     pub scale: f64,
     pub z: i64,
     pub added_at: i64,
+    /// The titled group it is in on this board, if any.
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,6 +120,23 @@ pub struct Placement {
 pub struct BoardItem {
     pub item: Item,
     pub placement: Placement,
+}
+
+/// A titled group of references on a project board.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Group {
+    pub id: String,
+    pub title: String,
+}
+
+/// What a group should be after `save_groups`: these items, under this title. No id makes a new group.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupChange {
+    pub id: Option<String>,
+    pub title: String,
+    pub item_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

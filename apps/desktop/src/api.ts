@@ -38,6 +38,21 @@ export interface Placement {
   scale: number;
   z: number;
   addedAt: number;
+  /** The titled group it is in on this board, if any. */
+  groupId: string | null;
+}
+
+/** A titled group of references on a project board. Which references are in it is on their placements. */
+export interface Group {
+  id: string;
+  title: string;
+}
+
+/** What a group should be after saving: exactly these references, under this title. No id makes a new group. */
+export interface GroupChange {
+  id: string | null;
+  title: string;
+  itemIds: string[];
 }
 
 export interface BoardItem {
@@ -129,6 +144,9 @@ export const api = {
   saveLayout: (collectionId: string, updates: LayoutUpdate[]) =>
     invoke<void>('save_layout', { collectionId, updates }),
   setBoardView: (collectionId: string, view: BoardView) => invoke<void>('set_board_view', { collectionId, view }),
+  listGroups: (collectionId: string) => invoke<Group[]>('list_groups', { collectionId }),
+  /** Each change's group holds exactly its references afterwards; empty groups go. Returns the groups' ids. */
+  saveGroups: (collectionId: string, changes: GroupChange[]) => invoke<string[]>('save_groups', { collectionId, changes }),
   extensionContact: () => invoke<ExtensionContact | null>('extension_contact'),
   /** The Mac webview hides the pointer after each key press the page handles; this brings it back. */
   showPointer: () => invoke<void>('show_pointer'),

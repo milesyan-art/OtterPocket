@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatTimestamp, siteName } from '@otterpocket/shared';
 import { Board, isTyping, type ScreenRect } from '../board/Board';
-import type { BoardItem, BoardView, LayoutUpdate } from '../api';
+import type { BoardItem, BoardView, Group, LayoutUpdate } from '../api';
 import { Favicon } from './Favicon';
 import type { Tool } from './FloatingToolbar';
 import { SelectionToolbar } from './SelectionToolbar';
@@ -11,6 +11,9 @@ interface Props {
   /** Where this board was left last time, or null to fit it to the screen. */
   view: BoardView | null;
   items: BoardItem[];
+  groups: Group[];
+  /** The group whose title is being typed, in a text field over the board. */
+  editingGroupId: string | null;
   /** In the order they were picked. */
   selectedIds: string[];
   grayscale: boolean;
@@ -27,18 +30,26 @@ interface Props {
   onInspect(itemId: string): void;
   onOpenSource(itemId: string): void;
   onRemove(itemIds: string[]): void;
+  /** ⌘G: group what's selected (or update the group it shares references with). */
+  onGroup(): void;
+  /** ⇧⌘G: take what's selected out of its groups. */
+  onUngroup(): void;
+  /** Start (a group id) or stop (null) editing a group's title. */
+  onEditTitle(groupId: string | null): void;
+  onRenameGroup(groupId: string, title: string): void;
   onLayoutChange(updates: LayoutUpdate[]): void;
   onViewChange(boardId: string, view: BoardView): void;
 }
 
 export function BoardCanvas(props: Props) {
-  const { boardId, items, selectedIds, grayscale, fitSignal, reveal, inspector } = props;
+  const { boardId, items, groups, editingGroupId, selectedIds, grayscale, fitSignal, reveal, inspector } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
   latest.current = props;
   // Where the selection is on screen, and whether it is being dragged.
   const [selection, setSelection] = useState<{ rect: ScreenRect; held: boolean } | null>(null);
+  const [titleSpot, setTitleSpot] = useState<{ rect: ScreenRect; fontSize: number } | null>(null);
 
   useEffect(() => {
     const board = new Board({
@@ -49,9 +60,13 @@ export function BoardCanvas(props: Props) {
       selectionMoved: (rect, held) => setSelection(rect && { rect, held }),
       viewChanged: (boardId, view) => latest.current.onViewChange(boardId, view),
       revealed: (id) => latest.current.onRevealed(id),
+      renameGroup: (id) => latest.current.onEditTitle(id),
+      titleMoved: (rect, fontSize) => setTitleSpot(rect && { rect, fontSize }),
     });
     boardRef.current = board;
     board.setItems(latest.current.items, latest.current.boardId, latest.current.view);
+    board.setGroups(latest.current.groups);
+    board.editTitle(latest.current.editingGroupId);
     board.select(latest.current.selectedIds);
     board.setGrayscale(latest.current.grayscale);
     void board.init(hostRef.current!);
@@ -63,6 +78,9 @@ export function BoardCanvas(props: Props) {
 
   // The view only matters when the board changes, so it is read from the latest props rather than a dependency.
   useEffect(() => boardRef.current?.setItems(items, boardId, latest.current.view), [items, boardId]);
+  // After the items, so a board's groups never meet the previous board's items.
+  useEffect(() => boardRef.current?.setGroups(groups), [groups]);
+  useEffect(() => boardRef.current?.editTitle(editingGroupId), [editingGroupId]);
   useEffect(() => boardRef.current?.select(selectedIds), [selectedIds]);
   useEffect(() => boardRef.current?.setGrayscale(grayscale), [grayscale]);
   // Both sit in the same box, so the panel's distance from the right is in the canvas's terms. Offsets, not
@@ -83,10 +101,11 @@ export function BoardCanvas(props: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       const board = boardRef.current;
-      const { items, selectedIds, onSelect, onRemove } = latest.current;
+      const { items, selectedIds, onSelect, onRemove, onGroup, onUngroup } = latest.current;
       if (e.metaKey || e.ctrlKey) {
-        if (e.key !== 'a') return;
-        onSelect(items.map((b) => b.item.id));
+        if (e.key === 'a') onSelect(items.map((b) => b.item.id));
+        else if (e.code === 'KeyG') (e.shiftKey ? onUngroup : onGroup)();
+        else return;
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) onRemove(selectedIds);
       else if (e.key === 'f') board?.fitAll();
       else if (e.key === '=' || e.key === '+') board?.zoomBy(1.25);
@@ -120,6 +139,17 @@ export function BoardCanvas(props: Props) {
           <span aria-hidden>↗</span>
         </button>
       )}
+      {editingGroupId && titleSpot && (
+        <GroupTitleField
+          key={editingGroupId}
+          spot={titleSpot}
+          title={groups.find((g) => g.id === editingGroupId)?.title ?? ''}
+          onDone={(title) => {
+            props.onEditTitle(null);
+            if (title !== null) props.onRenameGroup(editingGroupId, title);
+          }}
+        />
+      )}
       {selectedIds.length > 1 && selection && !selection.held && host && (
         <SelectionToolbar
           around={selection.rect}
@@ -129,5 +159,57 @@ export function BoardCanvas(props: Props) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A group's title being typed, in a text field laid exactly over the title on the board and set the same way,
+ * so it reads as the heading being edited in place. Zoomed far out it stays big enough to type in. Enter or
+ * clicking away keeps it; Esc goes back to what it was.
+ */
+function GroupTitleField({
+  spot,
+  title,
+  onDone,
+}: {
+  spot: { rect: ScreenRect; fontSize: number };
+  title: string;
+  onDone(title: string | null): void;
+}) {
+  const [value, setValue] = useState(title);
+  const done = useRef(false);
+  const finish = (result: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(result === null || result.trim() === title ? null : result.trim());
+  };
+  const fontSize = Math.max(12, spot.fontSize);
+  const height = Math.max(spot.rect.height, fontSize * 1.25);
+  return (
+    <input
+      className="group-title-field"
+      autoFocus
+      value={value}
+      placeholder="Group name"
+      maxLength={200}
+      spellCheck={false}
+      style={{
+        left: spot.rect.x,
+        top: spot.rect.y + (spot.rect.height - height) / 2,
+        width: Math.max(120, spot.rect.width),
+        height,
+        lineHeight: `${height}px`,
+        fontSize,
+      }}
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => finish(value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') finish(value);
+        else if (e.key === 'Escape') finish(null);
+        else return;
+        e.preventDefault();
+      }}
+    />
   );
 }

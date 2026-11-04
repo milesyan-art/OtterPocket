@@ -9,7 +9,13 @@ const PATHS = {
   check: 'M5 12l5 5 9-10',
   close: 'M6 6l12 12M18 6L6 18',
   fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
-  arrange: 'M4 4h6v16H4zM14 4h6v6h-6zM14 14h6v6h-6z',
+  // The three ways to arrange, drawn alike: few shapes, wide gaps. Tidy up (the first Arrange icon):
+  // different sizes, edges lined up. Grid: one cell each. Columns: one width, uneven lengths.
+  tidy: 'M4 4h6v16H4zM14 4h6v6h-6zM14 14h6v6h-6z',
+  grid: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  columns: 'M4 4h6v11H4zM14 4h6v16h-6z',
+  group: 'M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8h5v4H7zM12 12h5v4h-5z',
+  ungroup: 'M3 4h7v6H3zM14 14h7v6h-7z',
   contrast: 'M12 3a9 9 0 1 0 0 18V3z M12 3a9 9 0 1 1 0 18',
   pin: 'M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8',
   external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
