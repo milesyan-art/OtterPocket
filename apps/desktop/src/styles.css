@@ -968,6 +968,36 @@ kbd {
   color: var(--accent);
 }
 
+/* Tools for what's selected, attached to the box around the selection; the board places the bar. */
+.selection-tools {
+  position: absolute;
+  z-index: 3;
+  translate: -50% 0;
+  animation: pop-in 120ms ease-out;
+}
+
+/* Its menu floats beside the bar, so opening it never moves the bar. */
+.selection-tools .tool-menu {
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+}
+
+.selection-tools.menu-above .tool-menu {
+  bottom: calc(100% + 8px);
+}
+
+.selection-tools.menu-below .tool-menu {
+  top: calc(100% + 8px);
+}
+
+.selection-count {
+  padding: 0 6px 0 8px;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* ---- vault ---------------------------------------------------------------------------- */
 
 .vault {

@@ -67,8 +67,11 @@ export interface BoardEvents {
   clicked(itemId: string): void;
   layoutChanged(updates: LayoutUpdate[]): void;
   openSource(itemId: string): void;
-  /** Where the selected item is on screen while exactly one is selected, so React can float its source badge there. */
-  selectionMoved(rect: ScreenRect | null): void;
+  /**
+   * Where the selection is on screen, so React can float things by it: the selected item, or the box around
+   * several. `held` while it is being moved, scaled or boxed in, when tools floating by it keep out of the way.
+   */
+  selectionMoved(rect: ScreenRect | null, held: boolean): void;
   /** The person panned, zoomed or fitted the board. Not called for the automatic fit of a board's first visit. */
   viewChanged(boardId: string, view: BoardView): void;
   /** A newly saved item asked for with `reveal` is now on screen. */
@@ -801,6 +804,7 @@ export class Board {
     if (drag.kind !== 'scale' && !drag.moved) {
       if (Math.hypot(e.global.x - drag.start.x, e.global.y - drag.start.y) < DRAG_THRESHOLD) return;
       drag.moved = true;
+      this.drawSelection(); // now held
     }
     if (drag.kind === 'pan') {
       this.world.position.set(drag.startPos.x + e.global.x - drag.start.x, drag.startPos.y + e.global.y - drag.start.y);
@@ -859,6 +863,7 @@ export class Board {
         this.keepSelectionClear();
       }
     }
+    this.drawSelection(); // no longer held
     this.revealPending();
   }
 
@@ -996,7 +1001,7 @@ export class Board {
     this.scaleHandle.clear();
     if (nodes.length === 0) {
       this.scaleHandle.visible = false;
-      this.events.selectionMoved(null);
+      this.events.selectionMoved(null, false);
       return;
     }
     const zoom = this.world.scale.x;
@@ -1020,15 +1025,14 @@ export class Board {
     this.scaleHandle.position.set(box.x + box.width, box.y + box.height);
     this.scaleHandle.visible = true;
 
-    if (nodes.length > 1) return this.events.selectionMoved(null);
     const topLeft = this.world.toGlobal({ x: box.x, y: box.y });
     const bottomRight = this.world.toGlobal({ x: box.x + box.width, y: box.y + box.height });
-    this.events.selectionMoved({
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y,
-    });
+    const drag = this.drag;
+    const held = !!drag && drag.kind !== 'pan' && (drag.kind === 'scale' || drag.moved);
+    this.events.selectionMoved(
+      { x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y },
+      held,
+    );
   }
 }
 

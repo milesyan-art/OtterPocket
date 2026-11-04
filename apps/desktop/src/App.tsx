@@ -289,8 +289,10 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     api.saveLayout(boardId, updates).catch((e) => showError(String(e)));
   };
 
-  const arrangeBoard = ({ kind, done, already }: ArrangeChoice) => {
-    const board = itemsBoardId === activeId ? items : NO_ITEMS;
+  /** Puts the board in order, or just `only` (the selection), which keeps its top-left corner where it was. */
+  const arrangeBoard = ({ kind, done, already }: ArrangeChoice, only?: string[]) => {
+    const all = itemsBoardId === activeId ? items : NO_ITEMS;
+    const board = only ? all.filter((b) => only.includes(b.item.id)) : all;
     const spots = arrange(
       kind,
       board.map(({ item, placement: p }) => {
@@ -312,6 +314,15 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     saveLayout(after);
     setToast({ message: done, undo: () => saveLayout(before) });
   };
+
+  const arrangeOptions = (only?: string[]) =>
+    ARRANGEMENTS.map((choice) => ({
+      id: choice.kind,
+      label: choice.label,
+      hint: choice.hint,
+      sample: <LayoutSample kind={choice.kind} />,
+      onClick: () => arrangeBoard(choice, only),
+    }));
 
   const toggleOnTop = async () => {
     const next = !onTop;
@@ -391,6 +402,9 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               fitSignal={fitSignal}
               reveal={revealHere}
               inspector={inspectorEl}
+              selectionTools={[
+                [{ id: 'arrange-selection', icon: 'arrange', label: 'Arrange selected', options: arrangeOptions(selectedIds) }],
+              ]}
               onRevealed={revealed}
               onSelect={select}
               onInspect={inspect}
@@ -422,18 +436,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
                 ? []
                 : [
                     { id: 'fit', icon: 'fit', label: 'Fit everything', shortcut: 'F', onClick: () => setFitSignal((n) => n + 1) },
-                    {
-                      id: 'arrange',
-                      icon: 'arrange',
-                      label: 'Arrange',
-                      options: ARRANGEMENTS.map((choice) => ({
-                        id: choice.kind,
-                        label: choice.label,
-                        hint: choice.hint,
-                        sample: <LayoutSample kind={choice.kind} />,
-                        onClick: () => arrangeBoard(choice),
-                      })),
-                    },
+                    { id: 'arrange', icon: 'arrange', label: 'Arrange', options: arrangeOptions() },
                     {
                       id: 'grayscale',
                       icon: 'contrast',

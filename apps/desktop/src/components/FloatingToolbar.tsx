@@ -30,11 +30,30 @@ interface Props {
   children?: ReactNode;
 }
 
-/**
- * Tools in a bar floating over the bottom of the board, like a design app's. Each group is set off by a
- * divider; empty groups are left out, so a view can drop the tools that don't apply to it.
- */
+/** Tools in a bar floating over the bottom of the board, like a design app's. */
 export function FloatingToolbar({ groups, children }: Props) {
+  return (
+    <div className="float-dock">
+      {children}
+      <ToolBar groups={groups} />
+    </div>
+  );
+}
+
+interface ToolBarProps {
+  groups: Tool[][];
+  /** Where a tool's choices open: away from whatever the bar is attached to. */
+  menuSide?: 'above' | 'below';
+  label?: string;
+  /** Shown at the start of the bar, before the tools, e.g. what they act on. */
+  start?: ReactNode;
+}
+
+/**
+ * A bar of tools. Each group is set off by a divider; empty groups are left out, so a view can drop the
+ * tools that don't apply to it. Renders the bar and its open menu side by side, for the parent to stack.
+ */
+export function ToolBar({ groups, menuSide = 'above', label = 'Tools', start }: ToolBarProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -58,32 +77,35 @@ export function FloatingToolbar({ groups, children }: Props) {
 
   const shown = groups.filter((group) => group.length > 0);
   const menu = shown.flat().find((tool) => tool.id === openId)?.options;
+  const menuList = menu && (
+    <div className="tool-menu" role="menu" ref={menuRef}>
+      {menu.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setOpenId(null);
+            option.onClick();
+          }}
+        >
+          <span className="tool-menu-sample">{option.sample}</span>
+          <span className="tool-menu-text">
+            <span>{option.label}</span>
+            {option.hint && <span className="tool-menu-hint">{option.hint}</span>}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="float-dock">
-      {children}
-      {menu && (
-        <div className="tool-menu" role="menu" ref={menuRef}>
-          {menu.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpenId(null);
-                option.onClick();
-              }}
-            >
-              <span className="tool-menu-sample">{option.sample}</span>
-              <span className="tool-menu-text">
-                <span>{option.label}</span>
-                {option.hint && <span className="tool-menu-hint">{option.hint}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+    <>
+      {menuSide === 'above' && menuList}
       {shown.length > 0 && (
-        <div className="float-toolbar" role="toolbar" aria-label="Tools" ref={barRef}>
+        <div className="float-toolbar" role="toolbar" aria-label={label} ref={barRef}>
+          {start}
+          {start && <span className="float-toolbar-divider" aria-hidden />}
           {shown.map((group, i) => (
             <Fragment key={group[0]!.id}>
               {i > 0 && <span className="float-toolbar-divider" aria-hidden />}
@@ -112,6 +134,7 @@ export function FloatingToolbar({ groups, children }: Props) {
           ))}
         </div>
       )}
-    </div>
+      {menuSide === 'below' && menuList}
+    </>
   );
 }

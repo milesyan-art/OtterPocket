@@ -3,6 +3,8 @@ import { formatTimestamp, siteName } from '@otterpocket/shared';
 import { Board, isTyping, type ScreenRect } from '../board/Board';
 import type { BoardItem, BoardView, LayoutUpdate } from '../api';
 import { Favicon } from './Favicon';
+import type { Tool } from './FloatingToolbar';
+import { SelectionToolbar } from './SelectionToolbar';
 
 interface Props {
   boardId: string;
@@ -17,6 +19,8 @@ interface Props {
   reveal: { boardId: string; itemId: string } | null;
   /** The floating inspector while it is open over the board, so what's selected can be kept out from under it. */
   inspector: HTMLElement | null;
+  /** What can be done to several selected references at once, floating by them. */
+  selectionTools: Tool[][];
   onRevealed(itemId: string): void;
   onSelect(itemIds: string[]): void;
   /** A click on an item, as opposed to a press that drags it or Shift or ⌘ that adds it to the selection. */
@@ -33,7 +37,8 @@ export function BoardCanvas(props: Props) {
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
   latest.current = props;
-  const [badge, setBadge] = useState<ScreenRect | null>(null);
+  // Where the selection is on screen, and whether it is being dragged.
+  const [selection, setSelection] = useState<{ rect: ScreenRect; held: boolean } | null>(null);
 
   useEffect(() => {
     const board = new Board({
@@ -41,7 +46,7 @@ export function BoardCanvas(props: Props) {
       clicked: (id) => latest.current.onInspect(id),
       openSource: (id) => latest.current.onOpenSource(id),
       layoutChanged: (updates) => latest.current.onLayoutChange(updates),
-      selectionMoved: setBadge,
+      selectionMoved: (rect, held) => setSelection(rect && { rect, held }),
       viewChanged: (boardId, view) => latest.current.onViewChange(boardId, view),
       revealed: (id) => latest.current.onRevealed(id),
     });
@@ -94,8 +99,10 @@ export function BoardCanvas(props: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // The source badge is for one reference at a time.
+  // The source badge is for one reference at a time; the selection's tools for several.
   const selected = selectedIds.length === 1 ? items.find((b) => b.item.id === selectedIds[0])?.item : undefined;
+  const badge = selected && selection?.rect;
+  const host = hostRef.current;
 
   return (
     <div className="board">
@@ -112,6 +119,14 @@ export function BoardCanvas(props: Props) {
           {selected.source.videoTime != null && <span className="badge-time">▶ {formatTimestamp(selected.source.videoTime)}</span>}
           <span aria-hidden>↗</span>
         </button>
+      )}
+      {selectedIds.length > 1 && selection && !selection.held && host && (
+        <SelectionToolbar
+          around={selection.rect}
+          area={{ width: host.offsetWidth, height: host.offsetHeight }}
+          count={selectedIds.length}
+          groups={props.selectionTools}
+        />
       )}
     </div>
   );
