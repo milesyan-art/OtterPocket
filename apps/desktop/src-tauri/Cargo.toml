@@ -31,6 +31,10 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# Already built for tao with these features; only NSCursor is used (see `show_pointer`).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSCursor"] }
+
 
 # Full debug info for every dependency makes target/ several GB; line tables keep readable backtraces.
 [profile.dev]

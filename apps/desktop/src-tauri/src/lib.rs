@@ -58,6 +58,7 @@ pub fn run() {
             commands::set_board_view,
             commands::reveal_in_folder,
             commands::open_privacy_settings,
+            commands::show_pointer,
             commands::extension_contact,
         ])
         .build(tauri::generate_context!())

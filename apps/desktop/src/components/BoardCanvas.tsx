@@ -9,7 +9,8 @@ interface Props {
   /** Where this board was left last time, or null to fit it to the screen. */
   view: BoardView | null;
   items: BoardItem[];
-  selectedId: string | null;
+  /** In the order they were picked. */
+  selectedIds: string[];
   grayscale: boolean;
   fitSignal: number;
   /** A newly saved item to bring into view and select, once it is on this board. */
@@ -17,17 +18,17 @@ interface Props {
   /** The floating inspector while it is open over the board, so what's selected can be kept out from under it. */
   inspector: HTMLElement | null;
   onRevealed(itemId: string): void;
-  onSelect(itemId: string | null): void;
-  /** A click on an item, as opposed to a press that drags it. */
+  onSelect(itemIds: string[]): void;
+  /** A click on an item, as opposed to a press that drags it or Shift or ⌘ that adds it to the selection. */
   onInspect(itemId: string): void;
   onOpenSource(itemId: string): void;
-  onRemove(itemId: string): void;
+  onRemove(itemIds: string[]): void;
   onLayoutChange(updates: LayoutUpdate[]): void;
   onViewChange(boardId: string, view: BoardView): void;
 }
 
 export function BoardCanvas(props: Props) {
-  const { boardId, items, selectedId, grayscale, fitSignal, reveal, inspector } = props;
+  const { boardId, items, selectedIds, grayscale, fitSignal, reveal, inspector } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
@@ -36,7 +37,7 @@ export function BoardCanvas(props: Props) {
 
   useEffect(() => {
     const board = new Board({
-      select: (id) => latest.current.onSelect(id),
+      select: (ids) => latest.current.onSelect(ids),
       clicked: (id) => latest.current.onInspect(id),
       openSource: (id) => latest.current.onOpenSource(id),
       layoutChanged: (updates) => latest.current.onLayoutChange(updates),
@@ -46,7 +47,7 @@ export function BoardCanvas(props: Props) {
     });
     boardRef.current = board;
     board.setItems(latest.current.items, latest.current.boardId, latest.current.view);
-    board.select(latest.current.selectedId);
+    board.select(latest.current.selectedIds);
     board.setGrayscale(latest.current.grayscale);
     void board.init(hostRef.current!);
     return () => {
@@ -57,7 +58,7 @@ export function BoardCanvas(props: Props) {
 
   // The view only matters when the board changes, so it is read from the latest props rather than a dependency.
   useEffect(() => boardRef.current?.setItems(items, boardId, latest.current.view), [items, boardId]);
-  useEffect(() => boardRef.current?.select(selectedId), [selectedId]);
+  useEffect(() => boardRef.current?.select(selectedIds), [selectedIds]);
   useEffect(() => boardRef.current?.setGrayscale(grayscale), [grayscale]);
   // Both sit in the same box, so the panel's distance from the right is in the canvas's terms. Offsets, not
   // rects, so the panel's opening animation doesn't skew it.
@@ -75,14 +76,17 @@ export function BoardCanvas(props: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target) || e.metaKey || e.ctrlKey) return;
+      if (isTyping(e.target)) return;
       const board = boardRef.current;
-      const selected = latest.current.selectedId;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected) latest.current.onRemove(selected);
+      const { items, selectedIds, onSelect, onRemove } = latest.current;
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key !== 'a') return;
+        onSelect(items.map((b) => b.item.id));
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) onRemove(selectedIds);
       else if (e.key === 'f') board?.fitAll();
       else if (e.key === '=' || e.key === '+') board?.zoomBy(1.25);
       else if (e.key === '-') board?.zoomBy(0.8);
-      else if (e.key === 'Escape') latest.current.onSelect(null);
+      else if (e.key === 'Escape') onSelect([]);
       else return;
       e.preventDefault();
     };
@@ -90,7 +94,8 @@ export function BoardCanvas(props: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const selected = items.find((b) => b.item.id === selectedId)?.item;
+  // The source badge is for one reference at a time.
+  const selected = selectedIds.length === 1 ? items.find((b) => b.item.id === selectedIds[0])?.item : undefined;
 
   return (
     <div className="board">

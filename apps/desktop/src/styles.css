@@ -919,6 +919,15 @@ kbd {
   display: block;
 }
 
+/* Space held over the board, then a press: the hand, over items too (the board sets the canvas's own cursor). */
+.board-canvas.pan-ready canvas {
+  cursor: grab !important;
+}
+
+.board-canvas.panning canvas {
+  cursor: grabbing !important;
+}
+
 .source-badge {
   position: absolute;
   display: flex;

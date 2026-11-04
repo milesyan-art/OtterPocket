@@ -61,7 +61,9 @@ interface Reveal {
 }
 
 interface PendingRemoval {
-  item: Item;
+  items: Item[];
+  /** How many of them are on no other board, so removing them deletes them from the library. */
+  deleting: number;
 }
 
 interface Notice {
@@ -120,7 +122,8 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   const [items, setItems] = useState<BoardItem[]>([]);
   // Which board `items` came from: right after a switch they still belong to the previous one.
   const [itemsBoardId, setItemsBoardId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // In the order they were picked.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // The inspector opens on a click, not on every selection: pressing an item to drag it selects it too.
   const [inspecting, setInspecting] = useState(false);
   const [inspectorEl, setInspectorEl] = useState<HTMLElement | null>(null);
@@ -139,10 +142,11 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
 
   const showError = useCallback((message: string) => setToast({ message }), []);
 
-  // With nothing selected the inspector closes, so a selection that isn't a click (a new save) doesn't reopen it.
-  const select = useCallback((itemId: string | null) => {
-    setSelectedId(itemId);
-    if (!itemId) setInspecting(false);
+  // The inspector is about one reference. It closes when there isn't exactly one selected, so a selection that
+  // isn't a click (a new save) doesn't reopen it.
+  const select = useCallback((itemIds: string[]) => {
+    setSelectedIds((current) => (current.length === itemIds.length && current.every((id, i) => id === itemIds[i]) ? current : itemIds));
+    if (itemIds.length !== 1) setInspecting(false);
   }, []);
   const inspect = useCallback(() => setInspecting(true), []);
   const closeInspector = useCallback(() => setInspecting(false), []);
@@ -208,7 +212,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   }, [onLibraryLost]);
 
   useEffect(() => {
-    select(null);
+    select([]);
     setItems([]);
     setToast((t) => (t?.undo ? null : t));
     setReveal((r) => (r?.boardId === activeId ? r : null));
@@ -237,7 +241,8 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   }, [toast]);
 
   const active = collections.find((c) => c.id === activeId);
-  const selected = items.find((b) => b.item.id === selectedId)?.item ?? null;
+  const selectedItems = selectedIds.flatMap((id) => items.find((b) => b.item.id === id)?.item ?? []);
+  const selected = selectedItems.length === 1 ? selectedItems[0] : null;
   const isVault = activeId === VAULT_ID;
   const revealHere = reveal?.boardId === activeId ? reveal : null;
   const revealed = (itemId: string) => setReveal((r) => (r?.itemId === itemId ? null : r));
@@ -248,22 +253,29 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     if (item) openSource(item);
   };
 
-  const removeItem = async (item: Item, confirmed = false) => {
-    try {
-      const boards = await api.itemCollections(item.id);
-      const isLastBoard = boards.length <= 1;
-      if (isLastBoard && !confirmed) {
-        setPendingRemoval({ item });
-        return;
+  /** Takes references off the board on screen. Asks first when that deletes any of them from the library. */
+  const removeItems = async (targets: Item[], confirmed = false) => {
+    if (targets.length === 0) return;
+    const boardId = activeIdRef.current;
+    if (!confirmed) {
+      try {
+        const boards = await Promise.all(targets.map((item) => api.itemCollections(item.id)));
+        const deleting = boards.filter((b) => b.length <= 1).length;
+        if (deleting > 0) return setPendingRemoval({ items: targets, deleting });
+      } catch (e) {
+        return showError(String(e));
       }
-      await api.removeFromCollection(item.id, activeIdRef.current);
-      setPendingRemoval(null);
-      select(null);
-      await loadBoard(activeIdRef.current);
-      setRevision((r) => r + 1);
+    }
+    try {
+      for (const item of targets) await api.removeFromCollection(item.id, boardId);
     } catch (e) {
+      // Some may be gone already; the board is reloaded below to show what's left.
       showError(String(e));
     }
+    setPendingRemoval(null);
+    select([]);
+    await loadBoard(boardId);
+    setRevision((r) => r + 1);
   };
 
   const saveLayout = (updates: LayoutUpdate[]) => {
@@ -352,6 +364,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
             <h1 data-tauri-drag-region>{active?.name ?? 'Vault'}</h1>
             <span className="muted" data-tauri-drag-region>
               {items.length} {items.length === 1 ? 'reference' : 'references'}
+              {selectedItems.length > 1 && ` · ${selectedItems.length} selected`}
             </span>
           </div>
         </header>
@@ -361,10 +374,10 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
           {isVault ? (
             <VaultGrid
               items={items}
-              selectedId={selectedId}
+              selectedId={selected?.id ?? null}
               reveal={revealHere?.itemId ?? null}
               onRevealed={revealed}
-              onSelect={select}
+              onSelect={(id) => select(id ? [id] : [])}
               onInspect={inspect}
               onOpenSource={openSourceById}
             />
@@ -373,7 +386,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               boardId={activeId}
               view={views.current.get(activeId) ?? active?.view ?? null}
               items={itemsBoardId === activeId ? items : NO_ITEMS}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               grayscale={grayscale}
               fitSignal={fitSignal}
               reveal={revealHere}
@@ -382,10 +395,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               onSelect={select}
               onInspect={inspect}
               onOpenSource={openSourceById}
-              onRemove={(id) => {
-                const item = items.find((b) => b.item.id === id)?.item;
-                if (item) void removeItem(item);
-              }}
+              onRemove={(ids) => void removeItems(items.flatMap((b) => (ids.includes(b.item.id) ? [b.item] : [])))}
               onLayoutChange={saveLayout}
               onViewChange={saveView}
             />
@@ -399,7 +409,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               revision={revision}
               onNotesSaved={() => void loadBoard(activeIdRef.current)}
               onOpenSource={openSource}
-              onRemove={(item) => void removeItem(item)}
+              onRemove={(item) => void removeItems([item])}
               onReveal={revealItem}
               onOpenBoard={setActiveId}
               onError={showError}
@@ -459,9 +469,9 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
 
       {pendingRemoval && (
         <ConfirmRemoval
-          item={pendingRemoval.item}
+          removal={pendingRemoval}
           onCancel={() => setPendingRemoval(null)}
-          onConfirm={() => void removeItem(pendingRemoval.item, true)}
+          onConfirm={() => void removeItems(pendingRemoval.items, true)}
         />
       )}
 
@@ -492,30 +502,64 @@ function EmptyState({ isVault }: { isVault: boolean }) {
   );
 }
 
-function ConfirmRemoval({ item, onCancel, onConfirm }: { item: Item; onCancel(): void; onConfirm(): void }) {
+/**
+ * While a dialog is up it hears every key first and nothing behind it hears any, so Escape can't also clear the
+ * board's selection or close the inspector. Its keys read the latest handlers rather than listening anew on
+ * each render: a listener added again mid-keypress (a re-render caused by another listener) is skipped.
+ */
+function useDialogKeys(keys: { Escape?(): void; Enter?(): void }) {
+  const latest = useRef(keys);
+  latest.current = keys;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter') onConfirm();
+      e.stopPropagation();
+      const action = e.key === 'Escape' || e.key === 'Enter' ? latest.current[e.key] : undefined;
+      if (!action) return;
+      // Enter would press the focused button as well.
+      e.preventDefault();
+      action();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel, onConfirm]);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+}
+
+function ConfirmRemoval({ removal, onCancel, onConfirm }: { removal: PendingRemoval; onCancel(): void; onConfirm(): void }) {
+  useDialogKeys({ Escape: onCancel, Enter: onConfirm });
 
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Delete “{item.title || item.source.pageTitle || 'this reference'}”?</h3>
-        <p>It isn't on any other board, so removing it deletes it and its image file from your library.</p>
+        <h3>{removalTitle(removal)}</h3>
+        <p>{removalDetail(removal)}</p>
         <div className="modal-actions">
           <button onClick={onCancel}>Cancel</button>
           <button className="danger solid" onClick={onConfirm} autoFocus>
-            Delete
+            {removal.deleting === removal.items.length ? 'Delete' : 'Remove'}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function removalTitle({ items, deleting }: PendingRemoval): string {
+  if (items.length === 1) return `Delete “${items[0].title || items[0].source.pageTitle || 'this reference'}”?`;
+  if (deleting === items.length) return `Delete ${items.length} references?`;
+  return `Remove ${items.length} references from this board?`;
+}
+
+function removalDetail({ items, deleting }: PendingRemoval): string {
+  if (items.length === 1) return "It isn't on any other board, so removing it deletes it and its image file from your library.";
+  if (deleting === items.length) {
+    return "They aren't on any other board, so removing them deletes them and their image files from your library.";
+  }
+  const kept = items.length - deleting;
+  const deleted =
+    deleting === 1
+      ? "1 of them isn't on any other board, so it and its image file are deleted from your library."
+      : `${deleting} of them aren't on any other board, so they and their image files are deleted from your library.`;
+  return `${deleted} ${kept === 1 ? 'The other one is' : `The other ${kept} are`} only taken off this board.`;
 }
 
 interface ProblemDialogProps {
@@ -527,13 +571,7 @@ interface ProblemDialogProps {
 }
 
 function ProblemDialog({ problem, busy, onClose, onRetry, onForce }: ProblemDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDialogKeys({ Escape: onClose });
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

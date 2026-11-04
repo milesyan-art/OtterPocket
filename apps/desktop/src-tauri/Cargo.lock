@@ -2607,6 +2607,7 @@ name = "otter-pocket"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "objc2-app-kit",
  "rusqlite",
  "serde",
  "serde_json",

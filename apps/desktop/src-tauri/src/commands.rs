@@ -88,6 +88,16 @@ pub fn open_privacy_settings(app: AppHandle) -> Result<()> {
         .map_err(err)
 }
 
+/// Shows the pointer again. After every key press the page handles, the Mac webview hides the pointer until
+/// the mouse moves, so pressing Space to pan the board would make it vanish. Called just after the press.
+#[tauri::command]
+pub fn show_pointer(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.run_on_main_thread(|| objc2_app_kit::NSCursor::setHiddenUntilMouseMoves(false));
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 /// When the Chrome extension last got in touch, or None if it hasn't since the app started.
 #[tauri::command]
 pub fn extension_contact(extension: State<Arc<ExtensionTracker>>) -> Option<ExtensionContact> {

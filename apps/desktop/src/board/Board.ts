@@ -14,7 +14,7 @@ import {
   type PointData,
 } from 'pixi.js';
 import { ITEM_KIND_LABELS, siteName } from '@otterpocket/shared';
-import { assetUrl, type BoardItem, type BoardView, type Item, type LayoutUpdate } from '../api';
+import { api, assetUrl, type BoardItem, type BoardView, type Item, type LayoutUpdate } from '../api';
 
 /**
  * Saved pages (articles and artists) are bookmark cards, in board units: as wide as a typical preview
@@ -48,6 +48,8 @@ const DOUBLE_CLICK_MS = 350;
 const DRAG_THRESHOLD = 4;
 /** Wheel events closer together than this belong to one gesture, including a trackpad's glide after the fingers lift. */
 const WHEEL_GESTURE_GAP_MS = 150;
+/** Room (screen px) between the box drawn around several selected items and the items. */
+const GROUP_PAD = 6;
 const ACCENT = 0x8fb3ff;
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif';
 
@@ -59,12 +61,13 @@ export interface ScreenRect {
 }
 
 export interface BoardEvents {
-  select(itemId: string | null): void;
-  /** An item was pressed and let go without being moved: a click, not the start of arranging. */
+  /** What is selected now, in the order it was picked; empty when nothing is. */
+  select(itemIds: string[]): void;
+  /** An item was clicked on its own (no Shift or ⌘) and let go without being moved, and is now all that's selected. */
   clicked(itemId: string): void;
   layoutChanged(updates: LayoutUpdate[]): void;
   openSource(itemId: string): void;
-  /** Where the selected item is on screen, so React can float its source badge there. */
+  /** Where the selected item is on screen while exactly one is selected, so React can float its source badge there. */
   selectionMoved(rect: ScreenRect | null): void;
   /** The person panned, zoomed or fitted the board. Not called for the automatic fit of a board's first visit. */
   viewChanged(boardId: string, view: BoardView): void;
@@ -92,10 +95,40 @@ interface ViewGlide {
   start: number;
 }
 
+interface Spot {
+  x: number;
+  y: number;
+  scale: number;
+}
+
 type Drag =
-  | { kind: 'move'; id: string; grab: PointData; start: PointData; moved: boolean }
-  | { kind: 'scale'; id: string; startScale: number; startDistance: number }
-  | { kind: 'pan'; start: PointData; startPos: PointData; moved: boolean };
+  | {
+      kind: 'move';
+      /** Everything that moves: the whole selection. */
+      ids: string[];
+      /** The item under the pointer. */
+      pressed: string;
+      /** Where the press was, in board units. */
+      grab: PointData;
+      from: Map<string, Spot>;
+      /** Items brought to the front by the press, whose new order needs saving even if nothing moves. */
+      raised: string[];
+      start: PointData;
+      moved: boolean;
+      /** A plain press: let go without moving, it is a click, and selects just the pressed item. */
+      plain: boolean;
+    }
+  | { kind: 'scale'; ids: string[]; anchor: PointData; startDistance: number; from: Map<string, Spot>; minFactor: number }
+  | { kind: 'pan'; start: PointData; startPos: PointData; moved: boolean }
+  | {
+      kind: 'select';
+      /** The corner the box is pulled from, in board units. */
+      origin: PointData;
+      start: PointData;
+      /** What stays selected whatever the box covers: the selection at the press when Shift or ⌘ was held. */
+      kept: string[];
+      moved: boolean;
+    };
 
 /**
  * An infinite canvas rendered with PixiJS (WebGL), so large boards of big images
@@ -105,6 +138,8 @@ export class Board {
   private app = new Application();
   private world = new Container({ sortableChildren: true });
   private selectionOutline = new Graphics();
+  /** The box pulled out over the board to select what it touches, drawn in screen pixels above everything. */
+  private selectionBox = new Graphics();
   private rippleRings = new Graphics();
   private scaleHandle = new Graphics();
   private grayscaleFilter = new ColorMatrixFilter();
@@ -117,12 +152,14 @@ export class Board {
   private textures = new Map<string, Promise<Texture>>();
   private favicons = new Map<string, Promise<Texture | null>>();
   private resizeObserver?: ResizeObserver;
+  private host: HTMLElement | null = null;
 
   private ready = false;
   private destroyed = false;
   private boardId: string | null = null;
   private items: BoardItem[] = [];
-  private selectedId: string | null = null;
+  /** In the order it was picked. */
+  private selected: string[] = [];
   private grayscale = false;
   private needsFit = true;
   /** The view to restore once the canvas is ready: where this board was left last time. */
@@ -135,7 +172,9 @@ export class Board {
   private wheelAt = 0;
   /** Set by a press: the scroll gesture already under way is ignored until it ends, so it can't slide the board. */
   private wheelHeld = false;
+  /** Space is held: a press anywhere pans the board. */
   private spaceDown = false;
+  private pointerOver = false;
   private lastDown = { id: '', time: 0 };
 
   constructor(private events: BoardEvents) {}
@@ -154,10 +193,12 @@ export class Board {
       return;
     }
     this.ready = true;
+    this.host = host;
     host.appendChild(this.app.canvas);
 
     this.grayscaleFilter.desaturate();
-    this.app.stage.addChild(this.world);
+    this.selectionBox.eventMode = 'none';
+    this.app.stage.addChild(this.world, this.selectionBox);
     this.rippleRings.eventMode = 'none';
     this.rippleRings.zIndex = Number.MAX_SAFE_INTEGER - 2;
     this.selectionOutline.eventMode = 'none';
@@ -177,8 +218,12 @@ export class Board {
     stage.on('pointerupoutside', () => this.endDrag());
 
     this.app.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.app.canvas.addEventListener('pointerenter', this.onPointerEnter);
+    this.app.canvas.addEventListener('pointerleave', this.onPointerLeave);
     window.addEventListener('keydown', this.onKey);
     window.addEventListener('keyup', this.onKey);
+    // Space let go while another app was in front never arrives here.
+    window.addEventListener('blur', this.releaseSpace);
     this.screenSize = { width: this.app.screen.width, height: this.app.screen.height };
     this.resizeObserver = new ResizeObserver(() => {
       this.app.resize();
@@ -202,8 +247,11 @@ export class Board {
     this.ready = false;
     this.resizeObserver?.disconnect();
     this.app.canvas.removeEventListener('wheel', this.onWheel);
+    this.app.canvas.removeEventListener('pointerenter', this.onPointerEnter);
+    this.app.canvas.removeEventListener('pointerleave', this.onPointerLeave);
     window.removeEventListener('keydown', this.onKey);
     window.removeEventListener('keyup', this.onKey);
+    window.removeEventListener('blur', this.releaseSpace);
     this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true });
     this.textures.clear();
     this.favicons.clear();
@@ -215,7 +263,7 @@ export class Board {
   setItems(items: BoardItem[], boardId: string, view: BoardView | null = null): void {
     if (boardId !== this.boardId) {
       this.boardId = boardId;
-      this.selectedId = null;
+      this.selected = [];
       if (this.pendingReveal?.boardId !== boardId) this.pendingReveal = null;
       this.viewGlide = null;
       this.endRipple();
@@ -229,8 +277,8 @@ export class Board {
     this.sync();
   }
 
-  select(itemId: string | null): void {
-    this.selectedId = itemId;
+  select(itemIds: string[]): void {
+    this.selected = [...new Set(itemIds)];
     if (this.ready) this.drawSelection();
   }
 
@@ -315,7 +363,8 @@ export class Board {
    * in sight when it's too wide to fit beside it. Only pans: a click shouldn't change the zoom.
    */
   private keepSelectionClear(): void {
-    const node = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
+    // The inspector is about one item; with several selected it is closed.
+    const node = this.selected.length === 1 ? this.nodes.get(this.selected[0]) : undefined;
     if (!this.ready || !node || !this.coveredRight || this.drag) return;
     const zoom = this.world.scale.x;
     const left = this.world.x + node.root.x * zoom;
@@ -376,24 +425,13 @@ export class Board {
       this.world.position.set(screen.width / 2, screen.height / 2);
       return this.drawSelection();
     }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of this.nodes.values()) {
-      const s = n.root.scale.x;
-      minX = Math.min(minX, n.root.x);
-      minY = Math.min(minY, n.root.y);
-      maxX = Math.max(maxX, n.root.x + n.w * s);
-      maxY = Math.max(maxY, n.root.y + n.h * s);
-    }
+    const all = boundsOf([...this.nodes.values()]);
     const pad = 64;
-    const zoom = clamp(
-      Math.min((screen.width - pad * 2) / (maxX - minX), (screen.height - pad * 2) / (maxY - minY)),
-      MIN_ZOOM,
-      1,
-    );
+    const zoom = clamp(Math.min((screen.width - pad * 2) / all.width, (screen.height - pad * 2) / all.height), MIN_ZOOM, 1);
     this.world.scale.set(zoom);
     this.world.position.set(
-      (screen.width - (maxX - minX) * zoom) / 2 - minX * zoom,
-      (screen.height - (maxY - minY) * zoom) / 2 - minY * zoom,
+      (screen.width - all.width * zoom) / 2 - all.x * zoom,
+      (screen.height - all.height * zoom) / 2 - all.y * zoom,
     );
     this.drawSelection();
   }
@@ -418,10 +456,10 @@ export class Board {
       const titleChanged = isBookmark(data.item) && data.item.title !== node.data.item.title;
       node.data = data;
       if (titleChanged) this.fillBookmark(node);
-      const dragging = this.drag && 'id' in this.drag && this.drag.id === node.id;
+      const dragging = this.drag && 'ids' in this.drag && this.drag.ids.includes(node.id);
       if (!dragging) this.glideTo(node);
     }
-    if (this.selectedId && !this.nodes.has(this.selectedId)) this.selectedId = null;
+    this.selected = this.selected.filter((id) => this.nodes.has(id));
     if (this.ripple && !this.nodes.has(this.ripple.id)) this.endRipple();
     if (this.savedView) {
       this.showView(this.savedView);
@@ -443,10 +481,7 @@ export class Board {
     const node = this.nodes.get(want.itemId);
     if (!node) return;
     this.pendingReveal = null;
-    if (!isTyping(document.activeElement)) {
-      this.selectedId = node.id;
-      this.events.select(node.id);
-    }
+    if (!isTyping(document.activeElement)) this.setSelection([node.id]);
     const sliding = this.glideView(this.viewShowing(node));
     if (!reducedMotion()) {
       this.ripple = { id: node.id, start: performance.now() + (sliding ? REVEAL_MS : 0) };
@@ -486,8 +521,8 @@ export class Board {
     const { item } = data;
     const { w, h } = itemSize(item);
     const root = new Container();
+    // The plain arrow over items too: no hand hinting that they can be dragged.
     root.eventMode = 'static';
-    root.cursor = 'grab';
     root.hitArea = new Rectangle(0, 0, w, h);
     const node: Node = { id: item.id, root, w, h, data };
     root.on('pointerdown', (e) => this.onNodeDown(node, e));
@@ -679,63 +714,83 @@ export class Board {
   // ---- interaction -------------------------------------------------------------------
 
   private onNodeDown(node: Node, e: FederatedPointerEvent): void {
-    if (e.button === 1 || this.spaceDown) return; // let the stage pan
+    // Space or the middle button pans from anywhere, items included; the right button is kept for a menu.
+    if (e.button !== 0 || this.spaceDown) return;
     e.stopPropagation();
     this.stopViewGlide();
     this.wheelHeld = true;
     this.finishGlides();
+    // Shift or ⌘ adds an item to the selection, or takes it back out.
+    const toggle = e.shiftKey || e.metaKey;
     const now = performance.now();
-    if (this.lastDown.id === node.id && now - this.lastDown.time < DOUBLE_CLICK_MS) {
+    if (!toggle && this.lastDown.id === node.id && now - this.lastDown.time < DOUBLE_CLICK_MS) {
       this.lastDown = { id: '', time: 0 };
       this.events.openSource(node.id);
       return;
     }
-    this.lastDown = { id: node.id, time: now };
+    this.lastDown = toggle ? { id: '', time: 0 } : { id: node.id, time: now };
 
-    this.selectedId = node.id;
-    this.events.select(node.id);
-    const topZ = Math.max(0, ...[...this.nodes.values()].map((n) => n.data.placement.z));
-    if (node.data.placement.z < topZ) node.data.placement.z = topZ + 1;
-    node.root.zIndex = node.data.placement.z;
+    const wasSelected = this.selected.includes(node.id);
+    if (toggle && wasSelected) return this.setSelection(this.selected.filter((id) => id !== node.id));
+    if (toggle) this.setSelection([...this.selected, node.id]);
+    // Pressing one of several selected items keeps them all, so they can be dragged together.
+    else if (!wasSelected) this.setSelection([node.id]);
 
-    const pointer = this.world.toLocal(e.global);
+    const ids = [...this.selected];
     this.drag = {
       kind: 'move',
-      id: node.id,
-      grab: { x: pointer.x - node.root.x, y: pointer.y - node.root.y },
+      ids,
+      pressed: node.id,
+      grab: this.world.toLocal(e.global),
+      from: this.spotsOf(ids),
+      raised: this.bringToFront(ids),
       start: e.global.clone(),
       moved: false,
+      plain: !toggle,
     };
-    node.root.cursor = 'grabbing';
     this.drawSelection();
   }
 
   private startScale(e: FederatedPointerEvent): void {
-    const node = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
-    if (!node) return;
+    const nodes = this.selectedNodes();
+    if (e.button !== 0 || this.spaceDown || nodes.length === 0) return;
     e.stopPropagation();
     this.stopViewGlide();
     this.wheelHeld = true;
     this.finishGlides();
+    // Everything selected grows or shrinks together, away from the top-left corner of the lot.
+    const box = boundsOf(nodes);
     const pointer = this.world.toLocal(e.global);
+    const ids = nodes.map((n) => n.id);
     this.drag = {
       kind: 'scale',
-      id: node.id,
-      startScale: node.root.scale.x,
-      startDistance: Math.hypot(pointer.x - node.root.x, pointer.y - node.root.y),
+      ids,
+      anchor: { x: box.x, y: box.y },
+      startDistance: Math.hypot(pointer.x - box.x, pointer.y - box.y),
+      from: this.spotsOf(ids),
+      minFactor: Math.max(...nodes.map((n) => MIN_ITEM_SCALE / n.root.scale.x)),
     };
   }
 
   private onBackgroundDown(e: FederatedPointerEvent): void {
+    if (e.button !== 0 && e.button !== 1) return; // the right button is kept for a menu
     this.stopViewGlide();
-    if (e.button === 0 && !this.spaceDown && this.selectedId) {
-      this.selectedId = null;
-      this.events.select(null);
-      this.drawSelection();
-    }
     this.wheelHeld = true;
-    this.drag = { kind: 'pan', start: e.global.clone(), startPos: this.world.position.clone(), moved: false };
-    this.app.canvas.style.cursor = 'grabbing';
+    if (e.button === 1 || this.spaceDown) {
+      this.drag = { kind: 'pan', start: e.global.clone(), startPos: this.world.position.clone(), moved: false };
+      this.host?.classList.add('panning');
+      return;
+    }
+    // A plain press on the background starts the selection over; with Shift or ⌘ the box adds to it.
+    const adding = e.shiftKey || e.metaKey;
+    if (!adding) this.setSelection([]);
+    this.drag = {
+      kind: 'select',
+      origin: this.world.toLocal(e.global),
+      start: e.global.clone(),
+      kept: adding ? [...this.selected] : [],
+      moved: false,
+    };
   }
 
   private onPointerMove(e: FederatedPointerEvent): void {
@@ -751,44 +806,117 @@ export class Board {
       this.world.position.set(drag.startPos.x + e.global.x - drag.start.x, drag.startPos.y + e.global.y - drag.start.y);
       return this.drawSelection();
     }
-    const node = this.nodes.get(drag.id);
-    if (!node) return;
     const pointer = this.world.toLocal(e.global);
+    if (drag.kind === 'select') return this.pullSelectionBox(drag, pointer, e.global);
     if (drag.kind === 'move') {
-      node.root.position.set(pointer.x - drag.grab.x, pointer.y - drag.grab.y);
+      const dx = pointer.x - drag.grab.x;
+      const dy = pointer.y - drag.grab.y;
+      for (const [id, from] of drag.from) this.nodes.get(id)?.root.position.set(from.x + dx, from.y + dy);
     } else {
-      const distance = Math.hypot(pointer.x - node.root.x, pointer.y - node.root.y);
-      node.root.scale.set(Math.max(MIN_ITEM_SCALE, (drag.startScale * distance) / Math.max(1, drag.startDistance)));
+      const { anchor } = drag;
+      const distance = Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y);
+      const k = Math.max(drag.minFactor, distance / Math.max(1, drag.startDistance));
+      for (const [id, from] of drag.from) {
+        const root = this.nodes.get(id)?.root;
+        if (!root) continue;
+        root.position.set(anchor.x + (from.x - anchor.x) * k, anchor.y + (from.y - anchor.y) * k);
+        root.scale.set(from.scale * k);
+      }
     }
     this.drawSelection();
+  }
+
+  /** Selects whatever the box from the press to `corner` touches, along with what was kept, and draws the box. */
+  private pullSelectionBox(drag: Extract<Drag, { kind: 'select' }>, corner: PointData, screenCorner: PointData): void {
+    const box = boxBetween(drag.origin, corner);
+    const touched = [...this.nodes.values()]
+      .filter((n) => !drag.kept.includes(n.id) && overlaps(boundsOf([n]), box))
+      .sort((a, b) => a.data.placement.z - b.data.placement.z)
+      .map((n) => n.id);
+    this.setSelection([...drag.kept, ...touched]);
+    const screenBox = boxBetween(this.world.toGlobal(drag.origin), screenCorner);
+    this.selectionBox
+      .clear()
+      .rect(screenBox.x, screenBox.y, screenBox.width, screenBox.height)
+      .fill({ color: ACCENT, alpha: 0.12 })
+      .stroke({ width: 1, color: ACCENT, alpha: 0.9, alignment: 1 });
   }
 
   private endDrag(): void {
     const drag = this.drag;
     this.drag = null;
-    this.app.canvas.style.cursor = '';
+    this.host?.classList.remove('panning');
     if (drag?.kind === 'pan') {
-      // A click on the background deselects without panning; only a real pan is a new view.
+      // A middle click doesn't pan; only a real pan is a new view.
       if (!this.world.position.equals(drag.startPos)) this.reportView();
+    } else if (drag?.kind === 'select') {
+      this.selectionBox.clear();
     } else if (drag) {
-      this.keepDragged(drag.id);
-      if (drag.kind === 'move' && !drag.moved) {
-        this.events.clicked(drag.id);
+      this.keepDragged(drag);
+      if (drag.kind === 'move' && !drag.moved && drag.plain) {
+        this.setSelection([drag.pressed]);
+        this.events.clicked(drag.pressed);
         this.keepSelectionClear();
       }
     }
     this.revealPending();
   }
 
-  private keepDragged(id: string): void {
-    const node = this.nodes.get(id);
-    if (!node) return;
-    node.root.cursor = 'grab';
-    const p = node.data.placement;
-    p.x = node.root.x;
-    p.y = node.root.y;
-    p.scale = node.root.scale.x;
-    this.events.layoutChanged([{ itemId: node.id, x: p.x, y: p.y, scale: p.scale, z: p.z }]);
+  /** Saves where a drag left things, and the new stacking order of whatever the press brought to the front. */
+  private keepDragged(drag: Extract<Drag, { kind: 'move' | 'scale' }>): void {
+    const raised = drag.kind === 'move' ? drag.raised : [];
+    const updates: LayoutUpdate[] = [];
+    for (const id of drag.ids) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      const p = node.data.placement;
+      const { x, y } = node.root;
+      const scale = node.root.scale.x;
+      if (x === p.x && y === p.y && scale === p.scale && !raised.includes(id)) continue;
+      p.x = x;
+      p.y = y;
+      p.scale = scale;
+      updates.push({ itemId: id, x, y, scale, z: p.z });
+    }
+    if (updates.length > 0) this.events.layoutChanged(updates);
+  }
+
+  /** Changes what is selected and tells React; nothing happens when it is the same as before. */
+  private setSelection(ids: string[]): void {
+    if (ids.length === this.selected.length && ids.every((id, i) => id === this.selected[i])) return;
+    this.selected = ids;
+    this.events.select(ids);
+    this.drawSelection();
+  }
+
+  private selectedNodes(): Node[] {
+    return this.selected.flatMap((id) => this.nodes.get(id) ?? []);
+  }
+
+  private spotsOf(ids: string[]): Map<string, Spot> {
+    const spots = new Map<string, Spot>();
+    for (const id of ids) {
+      const root = this.nodes.get(id)?.root;
+      if (root) spots.set(id, { x: root.x, y: root.y, scale: root.scale.x });
+    }
+    return spots;
+  }
+
+  /**
+   * Brings `ids` in front of everything else, keeping their order among themselves. Returns the ones it moved
+   * in the stack; none when they are in front already.
+   */
+  private bringToFront(ids: string[]): string[] {
+    const chosen = new Set(ids);
+    let behind = 0;
+    for (const n of this.nodes.values()) if (!chosen.has(n.id)) behind = Math.max(behind, n.data.placement.z);
+    const lifted = ids.flatMap((id) => this.nodes.get(id) ?? []).sort((a, b) => a.data.placement.z - b.data.placement.z);
+    if (lifted.every((n) => n.data.placement.z > behind)) return [];
+    lifted.forEach((n, i) => {
+      n.data.placement.z = behind + 1 + i;
+      n.root.zIndex = n.data.placement.z;
+    });
+    return lifted.map((n) => n.id);
   }
 
   /** Trackpad: two-finger scroll pans, pinch zooms. Mouse: ⌘ + wheel zooms. */
@@ -814,11 +942,38 @@ export class Board {
     }
   };
 
+  /**
+   * Space held over the board makes a press pan instead, wherever it lands, as in most drawing apps. Only over
+   * the board: elsewhere Space still presses the focused button.
+   */
   private onKey = (e: KeyboardEvent): void => {
     if (e.code !== 'Space' || isTyping(e.target)) return;
-    this.spaceDown = e.type === 'keydown';
-    this.app.canvas.style.cursor = this.spaceDown ? 'grab' : '';
-    if (this.spaceDown) e.preventDefault();
+    if (e.type === 'keyup') {
+      if (!this.spaceDown) return;
+      e.preventDefault();
+      return this.releaseSpace();
+    }
+    if (!this.pointerOver && !this.spaceDown) return;
+    // A button clicked a moment ago still has the focus, and would be pressed too.
+    e.preventDefault();
+    // A handled key press makes the Mac webview hide the pointer until the mouse moves, and holding Space
+    // repeats the press. Once this press is done with, show the pointer (now the hand) again.
+    setTimeout(() => void api.showPointer().catch(() => undefined));
+    this.spaceDown = true;
+    this.host?.classList.add('pan-ready');
+  };
+
+  private releaseSpace = (): void => {
+    this.spaceDown = false;
+    this.host?.classList.remove('pan-ready');
+  };
+
+  private onPointerEnter = (): void => {
+    this.pointerOver = true;
+  };
+
+  private onPointerLeave = (): void => {
+    this.pointerOver = false;
   };
 
   private zoomAt(at: PointData, zoom: number): void {
@@ -830,32 +985,44 @@ export class Board {
     this.reportView();
   }
 
+  /**
+   * Outlines each selected item. Several selected also get a box around them all; the handle that scales
+   * the selection sits on its bottom-right corner.
+   */
   private drawSelection(): void {
     if (!this.ready) return;
-    const node = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
+    const nodes = this.selectedNodes();
     this.selectionOutline.clear();
     this.scaleHandle.clear();
-    if (!node) {
+    if (nodes.length === 0) {
       this.scaleHandle.visible = false;
       this.events.selectionMoved(null);
       return;
     }
     const zoom = this.world.scale.x;
-    const s = node.root.scale.x;
-    const { x, y } = node.root;
-    const w = node.w * s;
-    const h = node.h * s;
-    this.selectionOutline.rect(x, y, w, h).stroke({ width: 2 / zoom, color: ACCENT, alignment: 1 });
+    for (const n of nodes) {
+      const s = n.root.scale.x;
+      this.selectionOutline.rect(n.root.x, n.root.y, n.w * s, n.h * s).stroke({ width: 2 / zoom, color: ACCENT, alignment: 1 });
+    }
+    let box = boundsOf(nodes);
+    if (nodes.length > 1) {
+      const pad = GROUP_PAD / zoom;
+      box = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
+      this.selectionOutline
+        .rect(box.x, box.y, box.width, box.height)
+        .stroke({ width: 1 / zoom, color: ACCENT, alpha: 0.6, alignment: 1 });
+    }
     const size = 12 / zoom;
     this.scaleHandle
       .rect(-size / 2, -size / 2, size, size)
       .fill(0xffffff)
       .stroke({ width: 1.5 / zoom, color: ACCENT });
-    this.scaleHandle.position.set(x + w, y + h);
+    this.scaleHandle.position.set(box.x + box.width, box.y + box.height);
     this.scaleHandle.visible = true;
 
-    const topLeft = this.world.toGlobal({ x, y });
-    const bottomRight = this.world.toGlobal({ x: x + w, y: y + h });
+    if (nodes.length > 1) return this.events.selectionMoved(null);
+    const topLeft = this.world.toGlobal({ x: box.x, y: box.y });
+    const bottomRight = this.world.toGlobal({ x: box.x + box.width, y: box.y + box.height });
     this.events.selectionMoved({
       x: topLeft.x,
       y: topLeft.y,
@@ -863,6 +1030,27 @@ export class Board {
       height: bottomRight.y - topLeft.y,
     });
   }
+}
+
+/** The smallest box, in board units, around all of `nodes` where they are drawn now. */
+function boundsOf(nodes: Node[]): ScreenRect {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    const s = n.root.scale.x;
+    minX = Math.min(minX, n.root.x);
+    minY = Math.min(minY, n.root.y);
+    maxX = Math.max(maxX, n.root.x + n.w * s);
+    maxY = Math.max(maxY, n.root.y + n.h * s);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function boxBetween(a: PointData, b: PointData): ScreenRect {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+}
+
+function overlaps(a: ScreenRect, b: ScreenRect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
 async function loadTexture(url: string): Promise<Texture> {

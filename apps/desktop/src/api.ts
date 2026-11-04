@@ -130,6 +130,8 @@ export const api = {
     invoke<void>('save_layout', { collectionId, updates }),
   setBoardView: (collectionId: string, view: BoardView) => invoke<void>('set_board_view', { collectionId, view }),
   extensionContact: () => invoke<ExtensionContact | null>('extension_contact'),
+  /** The Mac webview hides the pointer after each key press the page handles; this brings it back. */
+  showPointer: () => invoke<void>('show_pointer'),
 };
 
 /** Fired by the capture server when the extension saves something: which item, and on which board. */
