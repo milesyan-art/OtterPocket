@@ -64,8 +64,12 @@ export const GROUP_FRAME = {
   band: GROUP_TITLE.line + GROUP_TITLE.room * 2,
   radius: 32,
 };
-/** Group frames and titles sit behind every item. */
-const GROUP_Z = -1_000_000_000;
+/**
+ * A group's frame, title and band sit just under its lowest reference (stacking orders are whole numbers), so
+ * a group brought to the front brings its frame along, over the groups and references it now covers.
+ */
+const GROUP_LAYER = { frame: -0.5, label: -0.4, handle: -0.3 };
+const BOARD_BG = 0x141417;
 const ACCENT = 0x8fb3ff;
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif';
 
@@ -77,8 +81,11 @@ export interface ScreenRect {
 }
 
 export interface BoardEvents {
-  /** What is selected now, in the order it was picked; empty when nothing is. */
-  select(itemIds: string[]): void;
+  /**
+   * What is selected now, in the order it was picked; empty when nothing is. `groupId` is the group whose band
+   * was pressed to pick it, so a group of one reference picked by its band is the group, not the reference.
+   */
+  select(itemIds: string[], groupId: string | null): void;
   /** An item was clicked on its own (no Shift or ⌘) and let go without being moved, and is now all that's selected. */
   clicked(itemId: string): void;
   layoutChanged(updates: LayoutUpdate[]): void;
@@ -147,8 +154,10 @@ type Drag =
       kind: 'move';
       /** Everything that moves: the whole selection. */
       ids: string[];
-      /** The item under the pointer. */
+      /** The item under the pointer; empty when the press was on a group's band. */
       pressed: string;
+      /** The group whose band was pressed, if that is what the press was on. */
+      pressedGroup: string | null;
       /** Where the press was, in board units. */
       grab: PointData;
       from: Map<string, Spot>;
@@ -156,7 +165,7 @@ type Drag =
       raised: string[];
       start: PointData;
       moved: boolean;
-      /** A plain press: let go without moving, it is a click, and selects just the pressed item. */
+      /** A plain press: let go without moving, it is a click, and selects just the pressed item (or group). */
       plain: boolean;
       /**
        * The press made a new selection. Tools floating by the selection wait until it is let go, rather than
@@ -212,6 +221,8 @@ export class Board {
   private items: BoardItem[] = [];
   /** In the order it was picked. */
   private selected: string[] = [];
+  /** The group picked by its band, when that is what the selection is. */
+  private pickedGroup: string | null = null;
   private grayscale = false;
   private needsFit = true;
   /** The view to restore once the canvas is ready: where this board was left last time. */
@@ -234,7 +245,7 @@ export class Board {
   async init(host: HTMLElement): Promise<void> {
     await this.app.init({
       resizeTo: host,
-      background: '#141417',
+      background: BOARD_BG,
       antialias: true,
       autoDensity: true,
       resolution: window.devicePixelRatio,
@@ -317,6 +328,7 @@ export class Board {
     if (boardId !== this.boardId) {
       this.boardId = boardId;
       this.selected = [];
+      this.pickedGroup = null;
       if (this.pendingReveal?.boardId !== boardId) this.pendingReveal = null;
       this.viewGlide = null;
       this.endRipple();
@@ -342,8 +354,9 @@ export class Board {
     if (this.ready) this.drawSelection();
   }
 
-  select(itemIds: string[]): void {
+  select(itemIds: string[], groupId: string | null = null): void {
     this.selected = [...new Set(itemIds)];
+    this.pickedGroup = groupId;
     if (this.ready) this.drawSelection();
   }
 
@@ -588,6 +601,7 @@ export class Board {
     const wanted = new Map(this.groupList.map((g) => [g.id, g]));
     for (const [id, view] of this.groups) {
       if (wanted.has(id)) continue;
+      if (this.hoveredGroup === id) this.hoveredGroup = null;
       view.frame.destroy();
       view.label.destroy({ children: true });
       view.handle.destroy();
@@ -610,19 +624,16 @@ export class Board {
   private createGroupView(id: string): GroupView {
     const frame = new Graphics();
     frame.eventMode = 'none';
-    frame.zIndex = GROUP_Z;
     const text = new Text({
       text: '',
       resolution: 2,
       style: textStyle(GROUP_FRAME.title, GROUP_FRAME.line, 1000, 0xa9a9b4, '600'),
     });
     const label = new Container();
-    label.zIndex = GROUP_Z + 1;
     label.eventMode = 'none';
     label.addChild(text);
-    // Behind the items like the rest of the frame, so an item laid over the band still gets its own press.
+    // Under the group's references like the rest of the frame, so one laid over the band still gets its own press.
     const handle = new Container();
-    handle.zIndex = GROUP_Z + 2;
     handle.eventMode = 'static';
     handle.on('pointerdown', (e) => this.onGroupDown(id, e));
     handle.on('pointerover', () => this.hoverGroup(id));
@@ -634,6 +645,13 @@ export class Board {
   private hoverGroup(groupId: string | null): void {
     this.hoveredGroup = groupId;
     this.drawSelection();
+  }
+
+  /** A group's items on this board, back to front. */
+  private membersOf(groupId: string): string[] {
+    return (this.groupMembers().get(groupId) ?? [])
+      .sort((a, b) => a.data.placement.z - b.data.placement.z)
+      .map((n) => n.id);
   }
 
   /** Each group's items, by group id. */
@@ -661,6 +679,8 @@ export class Board {
       const nodes = members.get(view.id);
       view.frame.clear();
       if (!nodes) {
+        // Hidden under the pointer, its band never hears the pointer leave.
+        if (this.hoveredGroup === view.id) this.hoveredGroup = null;
         view.box = null;
         view.label.visible = false;
         view.handle.visible = false;
@@ -668,20 +688,27 @@ export class Board {
       }
       const box = groupFrame(boundsOf(nodes));
       view.box = box;
+      const bottom = Math.min(...nodes.map((n) => n.data.placement.z));
+      view.frame.zIndex = bottom + GROUP_LAYER.frame;
+      view.label.zIndex = bottom + GROUP_LAYER.label;
+      view.handle.zIndex = bottom + GROUP_LAYER.handle;
       const whole = nodes.every((n) => selected.has(n.id));
       const hovered = view.id === this.hoveredGroup;
       const { radius: r, band } = GROUP_FRAME;
       const { x, y, width: w } = box;
+      const bandPath = () =>
+        view.frame
+          .moveTo(x, y + band)
+          .lineTo(x, y + r)
+          .arcTo(x, y, x + r, y, r)
+          .lineTo(x + w - r, y)
+          .arcTo(x + w, y, x + w, y + r, r)
+          .lineTo(x + w, y + band)
+          .closePath();
+      // The band is solid, so whatever it lies over doesn't show through the title; the rest stays a faint tint.
+      bandPath().fill({ color: BOARD_BG });
       view.frame.roundRect(x, y, w, box.height, r).fill({ color: 0xffffff, alpha: 0.025 });
-      view.frame
-        .moveTo(x, y + band)
-        .lineTo(x, y + r)
-        .arcTo(x, y, x + r, y, r)
-        .lineTo(x + w - r, y)
-        .arcTo(x + w, y, x + w, y + r, r)
-        .lineTo(x + w, y + band)
-        .closePath()
-        .fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
+      bandPath().fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
       view.frame
         .roundRect(x, y, w, box.height, r)
         .stroke({ width: 1.5 / zoom, color: whole ? ACCENT : hovered ? 0x7c7c88 : 0x4a4a55, alpha: whole ? 0.9 : 0.8 });
@@ -939,6 +966,7 @@ export class Board {
       kind: 'move',
       ids,
       pressed: node.id,
+      pressedGroup: null,
       grab: this.world.toLocal(e.global),
       from: this.spotsOf(ids),
       raised: this.bringToFront(ids),
@@ -952,7 +980,8 @@ export class Board {
 
   /**
    * A press on a group's top band picks up the whole group: it selects the group's items (Shift or ⌘ adds them
-   * to the selection) and dragging moves them together. A double-click renames the group.
+   * to the selection, or takes them back out when they are all in it) and dragging moves them together. A
+   * double-click renames the group.
    */
   private onGroupDown(groupId: string, e: FederatedPointerEvent): void {
     if (e.button !== 0 || this.spaceDown) return; // pans, as on an item
@@ -960,32 +989,40 @@ export class Board {
     this.stopViewGlide();
     this.wheelHeld = true;
     this.finishGlides();
+    const adding = e.shiftKey || e.metaKey;
     const now = performance.now();
     const key = `group:${groupId}`;
-    if (this.lastDown.id === key && now - this.lastDown.time < DOUBLE_CLICK_MS) {
+    if (!adding && this.lastDown.id === key && now - this.lastDown.time < DOUBLE_CLICK_MS) {
       this.lastDown = { id: '', time: 0 };
       this.events.renameGroup(groupId);
       return;
     }
-    this.lastDown = { id: key, time: now };
-    const members = (this.groupMembers().get(groupId) ?? [])
-      .sort((a, b) => a.data.placement.z - b.data.placement.z)
-      .map((n) => n.id);
+    this.lastDown = adding ? { id: '', time: 0 } : { id: key, time: now };
+    const members = this.membersOf(groupId);
     if (members.length === 0) return;
-    const adding = e.shiftKey || e.metaKey;
     const before = this.selected;
-    this.setSelection(adding ? [...this.selected, ...members.filter((id) => !this.selected.includes(id))] : members);
+    // Shift or ⌘ on a group that is all selected takes it back out, as on an item.
+    if (adding && members.every((id) => this.selected.includes(id))) {
+      return this.setSelection(this.selected.filter((id) => !members.includes(id)));
+    }
+    if (adding) {
+      const next = [...this.selected, ...members.filter((id) => !this.selected.includes(id))];
+      this.setSelection(next, next.length === members.length ? groupId : null);
+    }
+    // Pressing a group that is already selected, alone or with more, keeps it all, so it can be dragged together.
+    else if (!members.every((id) => this.selected.includes(id))) this.setSelection(members, groupId);
     const ids = [...this.selected];
     this.drag = {
       kind: 'move',
       ids,
       pressed: '',
+      pressedGroup: groupId,
       grab: this.world.toLocal(e.global),
       from: this.spotsOf(ids),
       raised: this.bringToFront(ids),
       start: e.global.clone(),
       moved: false,
-      plain: false,
+      plain: !adding,
       fresh: this.selected !== before,
     };
     this.drawSelection();
@@ -1095,9 +1132,13 @@ export class Board {
     } else if (drag) {
       this.keepDragged(drag);
       if (drag.kind === 'move' && !drag.moved && drag.plain) {
-        this.setSelection([drag.pressed]);
-        this.events.clicked(drag.pressed);
-        this.keepSelectionClear();
+        if (drag.pressedGroup) {
+          this.setSelection(this.membersOf(drag.pressedGroup), drag.pressedGroup);
+        } else {
+          this.setSelection([drag.pressed]);
+          this.events.clicked(drag.pressed);
+          this.keepSelectionClear();
+        }
       }
     }
     this.drawSelection(); // no longer held
@@ -1124,10 +1165,12 @@ export class Board {
   }
 
   /** Changes what is selected and tells React; nothing happens when it is the same as before. */
-  private setSelection(ids: string[]): void {
-    if (ids.length === this.selected.length && ids.every((id, i) => id === this.selected[i])) return;
+  private setSelection(ids: string[], groupId: string | null = null): void {
+    const same = ids.length === this.selected.length && ids.every((id, i) => id === this.selected[i]);
+    if (same && groupId === this.pickedGroup) return;
     this.selected = ids;
-    this.events.select(ids);
+    this.pickedGroup = groupId;
+    this.events.select(ids, groupId);
     this.drawSelection();
   }
 
@@ -1247,7 +1290,8 @@ export class Board {
     const zoom = this.world.scale.x;
     let box = boundsOf(nodes);
     let oneGroup = false;
-    if (nodes.length > 1) {
+    // A group of one picked by its band is the group too: the box (and the tools above it) take in its frame.
+    if (nodes.length > 1 || this.pickedGroup) {
       const selected = new Set(this.selected);
       for (const [id, groupNodes] of members) {
         if (!groupNodes.every((n) => selected.has(n.id))) continue;

@@ -171,9 +171,12 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
 
   // The inspector is about one reference. It closes when there isn't exactly one selected, so a selection that
   // isn't a click (a new save) doesn't reopen it.
-  const select = useCallback((itemIds: string[]) => {
+  // The group picked by its band, so a group of one can be told from its one reference.
+  const [pickedGroup, setPickedGroup] = useState<string | null>(null);
+  const select = useCallback((itemIds: string[], groupId: string | null = null) => {
     setSelectedIds((current) => (current.length === itemIds.length && current.every((id, i) => id === itemIds[i]) ? current : itemIds));
-    if (itemIds.length !== 1) setInspecting(false);
+    setPickedGroup(groupId);
+    if (itemIds.length !== 1 || groupId) setInspecting(false);
   }, []);
   const inspect = useCallback(() => setInspecting(true), []);
   const closeInspector = useCallback(() => setInspecting(false), []);
@@ -673,13 +676,11 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               groups={boardGroups}
               editingGroupId={editingGroupId}
               selectedIds={selectedIds}
+              pickedGroup={pickedGroup && pickedGroup === wholeGroup ? pickedGroup : null}
               grayscale={grayscale}
               reveal={revealHere}
               inspector={inspectorEl}
-              selectionTools={[
-                groupTools,
-                [arrangeTool('arrange-selection', selectedIds)],
-              ]}
+              selectionTools={selectedIds.length > 1 ? [groupTools, [arrangeTool('arrange-selection', selectedIds)]] : [groupTools]}
               onGroup={() => groupSelection()}
               onUngroup={ungroupSelection}
               onEditTitle={setEditingGroupId}
