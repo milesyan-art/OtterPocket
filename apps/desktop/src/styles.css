@@ -986,7 +986,7 @@ kbd {
 }
 
 .shortcuts {
-  width: 264px;
+  width: 288px;
   max-height: calc(100vh - 160px);
   overflow-y: auto;
   padding: 14px 14px 10px;
@@ -1033,6 +1033,11 @@ kbd {
 
 .shortcut-keys kbd {
   margin-right: 0;
+}
+
+.shortcut-or {
+  margin: 0 3px;
+  color: var(--muted);
 }
 
 /* ---- board ---------------------------------------------------------------------------- */

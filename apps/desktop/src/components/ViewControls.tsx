@@ -8,47 +8,41 @@ interface Props {
   onFit(): void;
 }
 
-/** Keys, then what they do. Each key is one <kbd>; "+" between them means together. */
+/**
+ * What it does, then the keys or gestures. Each is one <kbd>, held together; "or" starts another way to do the
+ * same, "/" the shortcut for the second action of a pair ("Undo / Redo").
+ */
 const SHORTCUTS: { title: string; rows: [keys: string[], action: string][] }[] = [
   {
     title: 'View',
     rows: [
       [['Space', 'Drag'], 'Pan'],
-      [['Scroll'], 'Pan (trackpad)'],
-      [['⌘', 'Scroll'], 'Zoom (or pinch)'],
-      [['+'], 'Zoom in'],
-      [['−'], 'Zoom out'],
+      [['⌘', 'Scroll wheel'], 'Zoom'],
+      [['+', '/', '−'], 'Zoom in / out'],
       [['F'], 'Fit everything'],
     ],
   },
   {
-    title: 'Select',
+    // Only panning and zooming differ on a trackpad. A Mac trackpad always scrolls with two fingers (only the
+    // direction is a setting), so name the fingers rather than "scroll".
+    title: 'Trackpad',
     rows: [
-      [['Drag'], 'Select with a box'],
-      [['⇧', 'Click'], 'Add to the selection'],
-      [['⌘', 'A'], 'Select all'],
-      [['Esc'], 'Select nothing'],
+      [['Two fingers'], 'Pan'],
+      [['Pinch', 'or', '⌘', 'Two fingers'], 'Zoom'],
     ],
   },
   {
     title: 'References',
     rows: [
       [['Double-click'], 'Go back to the source'],
-      [['⌘', 'G'], 'Group'],
-      [['⇧', '⌘', 'G'], 'Ungroup'],
+      [['⌘', 'A'], 'Select all'],
+      [['⌘', 'G', '/', '⇧', '⌘', 'G'], 'Group / Ungroup'],
       [['⌫'], 'Remove'],
     ],
   },
   {
     title: 'Edit',
-    rows: [
-      [['⌘', 'Z'], 'Undo'],
-      [['⇧', '⌘', 'Z'], 'Redo'],
-    ],
-  },
-  {
-    title: 'Help',
-    rows: [[['?'], 'Show these shortcuts']],
+    rows: [[['⌘', 'Z', '/', '⇧', '⌘', 'Z'], 'Undo / Redo']],
   },
 ];
 
@@ -88,9 +82,15 @@ export function ViewControls({ onZoomIn, onZoomOut, onFit }: Props) {
                 <div className="shortcut-row" key={keys.join() + action}>
                   <span>{action}</span>
                   <span className="shortcut-keys">
-                    {keys.map((key) => (
-                      <kbd key={key}>{key}</kbd>
-                    ))}
+                    {keys.map((key, i) =>
+                      key === 'or' || key === '/' ? (
+                        <span className="shortcut-or" key={i}>
+                          {key}
+                        </span>
+                      ) : (
+                        <kbd key={i}>{key}</kbd>
+                      ),
+                    )}
                   </span>
                 </div>
               ))}
