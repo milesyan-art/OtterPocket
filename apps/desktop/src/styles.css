@@ -986,10 +986,10 @@ kbd {
 }
 
 .shortcuts {
-  width: 288px;
+  width: 300px;
   max-height: calc(100vh - 160px);
   overflow-y: auto;
-  padding: 14px 14px 10px;
+  padding: 14px 18px 12px;
   border: 1px solid var(--line);
   border-radius: var(--float-radius);
   background: #1e1e23;
@@ -999,15 +999,15 @@ kbd {
 
 .shortcuts h3 {
   font-size: 13px;
-  margin-bottom: 10px;
+  font-weight: 600;
 }
 
-.shortcuts section + section {
-  margin-top: 12px;
+.shortcuts section {
+  margin-top: 14px;
 }
 
 .shortcuts h4 {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
@@ -1020,24 +1020,112 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 3px 0;
-  color: var(--text-2);
+  min-height: 32px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
   font-size: 12.5px;
 }
 
 .shortcut-keys {
   display: flex;
+  align-items: center;
   gap: 3px;
   flex: none;
 }
 
-.shortcut-keys kbd {
-  margin-right: 0;
+/* Keycaps rather than code: the interface font, one height, a heavier bottom edge. */
+.shortcuts kbd {
+  min-width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0 6px;
+  border-color: var(--line-strong);
+  background: var(--panel-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 19px;
 }
 
-.shortcut-or {
+.shortcut-sep {
   margin: 0 3px;
   color: var(--muted);
+}
+
+.shortcut-gesture {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 3px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/*
+ * Gesture glyphs, drawn rather than taken from an icon set, in the thin line of the toolbar icons. A mouse
+ * shows the part you use: the left button filled for a click or drag, only the wheel for scrolling. A
+ * trackpad shows two fingertips, together to swipe, apart to pinch.
+ */
+.glyph {
+  position: relative;
+  flex: none;
+  border: 1px solid var(--muted);
+}
+
+.glyph-button,
+.glyph-wheel {
+  width: 11px;
+  height: 15px;
+  border-radius: 5.5px;
+  overflow: hidden;
+}
+
+.glyph-button::after,
+.glyph-wheel::after {
+  content: '';
+  position: absolute;
+  background: var(--text-2);
+}
+
+.glyph-button::after {
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 42%;
+}
+
+.glyph-wheel::after {
+  left: 50%;
+  top: 2px;
+  width: 2px;
+  height: 4px;
+  margin-left: -1px;
+  border-radius: 1px;
+}
+
+.glyph-swipe,
+.glyph-pinch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 18px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+.glyph-pinch {
+  gap: 7px;
+}
+
+.glyph-swipe::before,
+.glyph-swipe::after,
+.glyph-pinch::before,
+.glyph-pinch::after {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-2);
 }
 
 /* ---- board ---------------------------------------------------------------------------- */
