@@ -8,49 +8,98 @@ interface Props {
   onFit(): void;
 }
 
-/** Keys, then what they do. Each key is one <kbd>; "+" between them means together. */
-const SHORTCUTS: { title: string; rows: [keys: string[], action: string][] }[] = [
+/** A mouse or trackpad gesture, drawn as a small glyph beside its name. */
+type Gesture = 'button' | 'wheel' | 'swipe' | 'pinch';
+
+/** A keycap, "/" between the shortcuts of a pair ("Zoom in / out"), or a gesture. Keycaps side by side are held together. */
+type Key = string | { gesture: Gesture; label: string };
+
+interface Section {
+  title: string;
+  rows: { action: string; keys: Key[] }[];
+}
+
+/**
+ * One way per action, the best-known one, as in a Mac menu: other ways keep working without a row (middle-drag
+ * pans, ⌘ + two fingers zooms). Things that work as in every Mac app (⇧-click, Esc) have no row either.
+ */
+const SECTIONS: Section[] = [
   {
     title: 'View',
     rows: [
-      [['Space', 'Drag'], 'Pan'],
-      [['Scroll'], 'Pan (trackpad)'],
-      [['⌘', 'Scroll'], 'Zoom (or pinch)'],
-      [['+'], 'Zoom in'],
-      [['−'], 'Zoom out'],
-      [['F'], 'Fit everything'],
+      { action: 'Pan', keys: ['Space', { gesture: 'button', label: 'Drag' }] },
+      { action: 'Zoom', keys: ['⌘', { gesture: 'wheel', label: 'Scroll' }] },
+      { action: 'Zoom in / out', keys: ['+', '/', '−'] },
+      { action: 'Fit everything', keys: ['F'] },
     ],
   },
   {
-    title: 'Select',
+    // Only panning and zooming differ on a trackpad. It always scrolls with two fingers (only the direction is
+    // a setting), so the gesture is named, not "scroll".
+    title: 'Trackpad',
     rows: [
-      [['Drag'], 'Select with a box'],
-      [['⇧', 'Click'], 'Add to the selection'],
-      [['⌘', 'A'], 'Select all'],
-      [['Esc'], 'Select nothing'],
+      { action: 'Pan', keys: [{ gesture: 'swipe', label: 'Two Finger Swipe' }] },
+      { action: 'Zoom', keys: [{ gesture: 'pinch', label: 'Pinch' }] },
     ],
   },
   {
     title: 'References',
     rows: [
-      [['Double-click'], 'Go back to the source'],
-      [['⌘', 'G'], 'Group'],
-      [['⇧', '⌘', 'G'], 'Ungroup'],
-      [['⌫'], 'Remove'],
+      { action: 'Go back to the source', keys: [{ gesture: 'button', label: 'Double Click' }] },
+      { action: 'Select all', keys: ['⌘', 'A'] },
+      { action: 'Group', keys: ['⌘', 'G'] },
+      { action: 'Ungroup', keys: ['⇧', '⌘', 'G'] },
+      { action: 'Remove', keys: ['⌫'] },
     ],
   },
   {
     title: 'Edit',
     rows: [
-      [['⌘', 'Z'], 'Undo'],
-      [['⇧', '⌘', 'Z'], 'Redo'],
+      { action: 'Undo', keys: ['⌘', 'Z'] },
+      { action: 'Redo', keys: ['⇧', '⌘', 'Z'] },
     ],
   },
-  {
-    title: 'Help',
-    rows: [[['?'], 'Show these shortcuts']],
-  },
 ];
+
+function Keys({ keys }: { keys: Key[] }) {
+  return (
+    <span className="shortcut-keys">
+      {keys.map((key, i) =>
+        typeof key !== 'string' ? (
+          <span className="shortcut-gesture" key={i}>
+            <span className={`glyph glyph-${key.gesture}`} aria-hidden />
+            {key.label}
+          </span>
+        ) : key === '/' ? (
+          <span className="shortcut-sep" key={i}>
+            /
+          </span>
+        ) : (
+          <kbd key={i}>{key}</kbd>
+        ),
+      )}
+    </span>
+  );
+}
+
+function ShortcutSheet() {
+  return (
+    <div className="shortcuts" role="dialog" aria-label="Keyboard shortcuts">
+      <h3>Keyboard shortcuts</h3>
+      {SECTIONS.map((section) => (
+        <section key={section.title}>
+          <h4>{section.title}</h4>
+          {section.rows.map((row) => (
+            <div className="shortcut-row" key={row.action}>
+              <span>{row.action}</span>
+              <Keys keys={row.keys} />
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
 
 /** Zoom and fit in a small bar at the bottom right of the board, with a help button for the shortcuts. */
 export function ViewControls({ onZoomIn, onZoomOut, onFit }: Props) {
@@ -78,26 +127,7 @@ export function ViewControls({ onZoomIn, onZoomOut, onFit }: Props) {
 
   return (
     <div className="view-dock" ref={dockRef}>
-      {helpOpen && (
-        <div className="shortcuts" role="dialog" aria-label="Keyboard shortcuts">
-          <h3>Keyboard shortcuts</h3>
-          {SHORTCUTS.map((section) => (
-            <section key={section.title}>
-              <h4>{section.title}</h4>
-              {section.rows.map(([keys, action]) => (
-                <div className="shortcut-row" key={keys.join() + action}>
-                  <span>{action}</span>
-                  <span className="shortcut-keys">
-                    {keys.map((key) => (
-                      <kbd key={key}>{key}</kbd>
-                    ))}
-                  </span>
-                </div>
-              ))}
-            </section>
-          ))}
-        </div>
-      )}
+      {helpOpen && <ShortcutSheet />}
       <ToolBar
         label="View"
         groups={[
