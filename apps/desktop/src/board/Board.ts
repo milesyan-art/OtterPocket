@@ -40,6 +40,12 @@ const RIPPLE_MS = 900;
 const RIPPLE_GAP_MS = 300;
 /** Room (screen px) kept around a newly saved item brought into view: more at the bottom, where the tools float. */
 const REVEAL_PAD = { side: 56, top: 56, bottom: 120 };
+/**
+ * How much of the canvas a reference alone on its board takes when it's shown to you, in its longer
+ * direction. Filling the screen made a first save look too big: testers shrank the picture instead of
+ * zooming out, and everything later was sized to match the shrunken one.
+ */
+const LONE_SHARE = 0.5;
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 8;
 const MIN_ITEM_SCALE = 0.05;
@@ -469,8 +475,9 @@ export class Board {
     const p = node.data.placement;
     const w = node.w * p.scale;
     const h = node.h * p.scale;
-    const room = { w: width - REVEAL_PAD.side * 2 - this.coveredRight, h: height - REVEAL_PAD.top - REVEAL_PAD.bottom };
-    const zoom = clamp(Math.min(this.world.scale.x, Math.max(1, room.w) / w, Math.max(1, room.h) / h), MIN_ZOOM, MAX_ZOOM);
+    if (this.nodes.size === 1) return this.loneView({ x: p.x, y: p.y, width: w, height: h });
+    const room = this.revealRoom();
+    const zoom = clamp(Math.min(this.world.scale.x, room.w / w, room.h / h), MIN_ZOOM, MAX_ZOOM);
     // Where the board would sit at that zoom without panning, then the least panning that brings the item in.
     const view = this.currentView();
     const nudge = (start: number, size: number, low: number, high: number) =>
@@ -480,6 +487,34 @@ export class Board {
     x += nudge(x + p.x * zoom, w * zoom, REVEAL_PAD.side, width - REVEAL_PAD.side - this.coveredRight);
     y += nudge(y + p.y * zoom, h * zoom, REVEAL_PAD.top, height - REVEAL_PAD.bottom);
     return { x: (width / 2 - x) / zoom, y: (height / 2 - y) / zoom, zoom };
+  }
+
+  /** The canvas left for showing things, clear of the edges, the floating tools and the inspector (screen px). */
+  private revealRoom(): { w: number; h: number } {
+    const { width, height } = this.app.screen;
+    return {
+      w: Math.max(1, width - REVEAL_PAD.side * 2 - this.coveredRight),
+      h: Math.max(1, height - REVEAL_PAD.top - REVEAL_PAD.bottom),
+    };
+  }
+
+  /**
+   * How a board with one reference on it is shown (`item` in board units): in the middle, taking about
+   * LONE_SHARE of the canvas, so it reads as a board with room for more. Never past 100%, so a small
+   * picture stays its own size.
+   */
+  private loneView(item: ScreenRect): BoardView {
+    const { width, height } = this.app.screen;
+    const box = this.groupMembers().size > 0 ? groupFrame(item) : item;
+    const room = this.revealRoom();
+    const zoom = clamp(Math.min(1, (LONE_SHARE * room.w) / box.width, (LONE_SHARE * room.h) / box.height), MIN_ZOOM, MAX_ZOOM);
+    // The middle of the box goes to the middle of that room, which isn't the middle of the canvas.
+    const middle = { x: (width - this.coveredRight) / 2, y: (REVEAL_PAD.top + height - REVEAL_PAD.bottom) / 2 };
+    return {
+      x: box.x + box.width / 2 + (width / 2 - middle.x) / zoom,
+      y: box.y + box.height / 2 + (height / 2 - middle.y) / zoom,
+      zoom,
+    };
   }
 
   /**
@@ -591,7 +626,9 @@ export class Board {
       this.savedView = null;
     } else if (this.needsFit && this.nodes.size > 0) {
       this.needsFit = false;
-      this.fit();
+      // Fitting one reference would fill the screen with it; a first look shouldn't (LONE_SHARE).
+      if (this.nodes.size === 1) this.showView(this.loneView(boundsOf([...this.nodes.values()])));
+      else this.fit();
     } else if (this.needsFit) {
       this.fit();
     }
