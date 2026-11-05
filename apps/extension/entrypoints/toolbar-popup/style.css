@@ -13,9 +13,6 @@
   --online: #23a061;
   --offline: #dd8a3a;
   --error: #c9352b;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,7 +22,7 @@
     --muted: #a3a3ae;
     --faint: #7c7c87;
     --line: #2a2a30;
-    --hover: #26262c;
+    --hover: #2a2a31;
     --key: #232328;
     --key-line: #3a3a42;
     --track: #3a3a42;
@@ -42,30 +39,30 @@
   box-sizing: border-box;
 }
 
+/* Same look as the floating button's menu (lib/dock.ts): a quiet title, compact rows, thin separators. */
+/* Set on body, not :root: Chrome gives extension pages its own body { font-family: system-ui; font-size: 75% }. */
 body {
-  width: 300px;
+  width: 268px;
   margin: 0;
-  padding: 0 6px 4px;
+  padding: 4px 6px 6px;
   background: var(--bg);
   color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 header {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 46px;
-  padding: 0 8px;
+  padding: 7px 8px 5px;
 }
 
-.mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-}
-
-header b {
+.title {
   flex: 1;
+  color: var(--faint);
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -73,8 +70,8 @@ header b {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
-  font-size: 11.5px;
+  color: var(--faint);
+  font-size: 11px;
 }
 
 .status::before {
@@ -95,9 +92,15 @@ header b {
 
 .group {
   display: grid;
-  gap: 1px;
-  padding: 5px 0;
-  border-top: 1px solid var(--line);
+}
+
+.group ~ .group::before,
+.tip::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 5px 2px;
+  background: var(--line);
 }
 
 .row {
@@ -105,7 +108,7 @@ header b {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 34px;
+  min-height: 32px;
   margin: 0;
   padding: 0 8px;
   border: 0;
@@ -122,10 +125,26 @@ header b {
   padding-bottom: 6px;
 }
 
+/* Settings, like the menu's own Hide and Turn off: quieter than the ways to save. */
+.row.quiet {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .row:hover,
 .row:focus-visible {
   background: var(--hover);
   outline: none;
+}
+
+.row:hover svg,
+.row:focus-visible svg {
+  color: var(--text);
+}
+
+.row.quiet:hover,
+.row.quiet:focus-visible {
+  color: var(--text);
 }
 
 .row:disabled {
@@ -149,7 +168,7 @@ header b {
 
 .label small {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 11px;
 }
 
 .keys {
@@ -229,8 +248,9 @@ kbd {
 }
 
 .problem {
-  margin: -2px 8px 8px;
-  color: var(--error);
+  margin: 4px 8px 2px;
+  color: var(--faint);
+  font-size: 11px;
 }
 
 .note button {
@@ -248,15 +268,20 @@ kbd {
 
 .tip {
   margin: 0;
-  padding: 9px 8px 6px;
-  border-top: 1px solid var(--line);
+  padding: 0 0 2px;
   color: var(--faint);
   font-size: 11.5px;
+}
+
+.tip span {
+  display: block;
+  padding: 2px 8px 0;
 }
 
 .tip b {
   color: var(--muted);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -17,6 +17,8 @@ interface Props {
   editingGroupId: string | null;
   /** In the order they were picked. */
   selectedIds: string[];
+  /** The group picked by its band, when the selection is that group; a group of one is then still a group. */
+  pickedGroup: string | null;
   grayscale: boolean;
   /** A newly saved item to bring into view and select, once it is on this board. */
   reveal: { boardId: string; itemId: string } | null;
@@ -25,7 +27,7 @@ interface Props {
   /** What can be done to several selected references at once, floating by them. */
   selectionTools: Tool[][];
   onRevealed(itemId: string): void;
-  onSelect(itemIds: string[]): void;
+  onSelect(itemIds: string[], groupId?: string | null): void;
   /** A click on an item, as opposed to a press that drags it or Shift or ⌘ that adds it to the selection. */
   onInspect(itemId: string): void;
   onOpenSource(itemId: string): void;
@@ -38,11 +40,13 @@ interface Props {
   onEditTitle(groupId: string | null): void;
   onRenameGroup(groupId: string, title: string): void;
   onLayoutChange(updates: LayoutUpdate[]): void;
+  /** References dragged wholly out of their groups' frames: they leave the groups, and the move is kept with it. */
+  onLeaveGroups(updates: LayoutUpdate[], itemIds: string[]): void;
   onViewChange(boardId: string, view: BoardView): void;
 }
 
 export function BoardCanvas(props: Props) {
-  const { boardId, items, groups, editingGroupId, selectedIds, grayscale, reveal, inspector } = props;
+  const { boardId, items, groups, editingGroupId, selectedIds, pickedGroup, grayscale, reveal, inspector } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<Board | null>(null);
   const latest = useRef(props);
@@ -53,10 +57,11 @@ export function BoardCanvas(props: Props) {
 
   useEffect(() => {
     const board = new Board({
-      select: (ids) => latest.current.onSelect(ids),
+      select: (ids, groupId) => latest.current.onSelect(ids, groupId),
       clicked: (id) => latest.current.onInspect(id),
       openSource: (id) => latest.current.onOpenSource(id),
       layoutChanged: (updates) => latest.current.onLayoutChange(updates),
+      leftGroups: (updates, ids) => latest.current.onLeaveGroups(updates, ids),
       selectionMoved: (rect, held) => setSelection(rect && { rect, held }),
       viewChanged: (boardId, view) => latest.current.onViewChange(boardId, view),
       revealed: (id) => latest.current.onRevealed(id),
@@ -67,7 +72,7 @@ export function BoardCanvas(props: Props) {
     board.setItems(latest.current.items, latest.current.boardId, latest.current.view);
     board.setGroups(latest.current.groups);
     board.editTitle(latest.current.editingGroupId);
-    board.select(latest.current.selectedIds);
+    board.select(latest.current.selectedIds, latest.current.pickedGroup);
     board.setGrayscale(latest.current.grayscale);
     void board.init(hostRef.current!);
     return () => {
@@ -81,7 +86,7 @@ export function BoardCanvas(props: Props) {
   // After the items, so a board's groups never meet the previous board's items.
   useEffect(() => boardRef.current?.setGroups(groups), [groups]);
   useEffect(() => boardRef.current?.editTitle(editingGroupId), [editingGroupId]);
-  useEffect(() => boardRef.current?.select(selectedIds), [selectedIds]);
+  useEffect(() => boardRef.current?.select(selectedIds, pickedGroup), [selectedIds, pickedGroup]);
   useEffect(() => boardRef.current?.setGrayscale(grayscale), [grayscale]);
   // Both sit in the same box, so the panel's distance from the right is in the canvas's terms. Offsets, not
   // rects, so the panel's opening animation doesn't skew it.
@@ -115,8 +120,9 @@ export function BoardCanvas(props: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // The source badge is for one reference at a time; the selection's tools for several.
-  const selected = selectedIds.length === 1 ? items.find((b) => b.item.id === selectedIds[0])?.item : undefined;
+  // The source badge is for one reference at a time; the selection's tools for several, or for a group.
+  const selected =
+    selectedIds.length === 1 && !pickedGroup ? items.find((b) => b.item.id === selectedIds[0])?.item : undefined;
   const badge = selected && selection?.rect;
   const host = hostRef.current;
 
@@ -147,7 +153,7 @@ export function BoardCanvas(props: Props) {
           }}
         />
       )}
-      {selectedIds.length > 1 && selection && !selection.held && host && (
+      {(selectedIds.length > 1 || pickedGroup) && selection && !selection.held && host && (
         <SelectionToolbar
           around={selection.rect}
           area={{ width: host.offsetWidth, height: host.offsetHeight }}

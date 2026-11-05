@@ -51,7 +51,7 @@ void (async () => {
     });
     actionsEl.append(row);
   }
-  if (!capturable) showProblem("Chrome doesn't let extensions capture on this page.");
+  if (!capturable) showProblem("Chrome doesn't allow capturing on this page.");
 
   // The floating button, and a way back for a site where it was hidden from its own menu.
   const site = url && /^https?:$/.test(url.protocol) ? url.hostname : null;

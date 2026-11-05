@@ -13,6 +13,8 @@ export default defineConfig({
     permissions: ['contextMenus', 'storage', 'unlimitedStorage', 'alarms', 'scripting'],
     // Needed to read images from any site, screenshot the visible tab, and talk to the local app.
     host_permissions: ['<all_urls>'],
+    // No default popup: a click on the toolbar button opens the menu in the page (background.ts).
+    action: { default_title: 'Otter Pocket' },
     // Chrome remembers the keys a user chose by these names, and the desktop app reads them: keep them once shipped.
     commands: {
       'capture-image': {

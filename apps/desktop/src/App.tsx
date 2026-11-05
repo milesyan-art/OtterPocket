@@ -171,9 +171,12 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
 
   // The inspector is about one reference. It closes when there isn't exactly one selected, so a selection that
   // isn't a click (a new save) doesn't reopen it.
-  const select = useCallback((itemIds: string[]) => {
+  // The group picked by its band, so a group of one can be told from its one reference.
+  const [pickedGroup, setPickedGroup] = useState<string | null>(null);
+  const select = useCallback((itemIds: string[], groupId: string | null = null) => {
     setSelectedIds((current) => (current.length === itemIds.length && current.every((id, i) => id === itemIds[i]) ? current : itemIds));
-    if (itemIds.length !== 1) setInspecting(false);
+    setPickedGroup(groupId);
+    if (itemIds.length !== 1 || groupId) setInspecting(false);
   }, []);
   const inspect = useCallback(() => setInspecting(true), []);
   const closeInspector = useCallback(() => setInspecting(false), []);
@@ -575,6 +578,17 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     void changeGroups(changes, wholeGroup ? 'Ungroup' : 'Take out of group', message);
   };
 
+  /** References dragged wholly out of their groups' frames leave them, in one step with the move. */
+  const leaveGroups = (moves: LayoutUpdate[], itemIds: string[]) => {
+    const leaving = new Set(itemIds);
+    const from = [...new Set(itemIds.flatMap((id) => onBoard.get(id)?.placement.groupId ?? []))];
+    if (from.length === 0) return void saveLayout(moves);
+    const changes = from.map((id) => ({ id, title: titleOf(id), itemIds: membersOf(id).filter((m) => !leaving.has(m)) }));
+    const refs = itemIds.length === 1 ? '1 reference' : `${itemIds.length} references`;
+    const message = `Took ${refs} out of ${from.length === 1 ? named(from[0]) : 'their groups'}`;
+    void changeGroups(changes, 'Take out of group', message, undefined, moves);
+  };
+
   const renameGroup = (groupId: string, title: string) =>
     void changeGroups([{ id: groupId, title, itemIds: membersOf(groupId) }], 'Rename group', null);
 
@@ -673,13 +687,11 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               groups={boardGroups}
               editingGroupId={editingGroupId}
               selectedIds={selectedIds}
+              pickedGroup={pickedGroup && pickedGroup === wholeGroup ? pickedGroup : null}
               grayscale={grayscale}
               reveal={revealHere}
               inspector={inspectorEl}
-              selectionTools={[
-                groupTools,
-                [arrangeTool('arrange-selection', selectedIds)],
-              ]}
+              selectionTools={selectedIds.length > 1 ? [groupTools, [arrangeTool('arrange-selection', selectedIds)]] : [groupTools]}
               onGroup={() => groupSelection()}
               onUngroup={ungroupSelection}
               onEditTitle={setEditingGroupId}
@@ -690,6 +702,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               onOpenSource={openSourceById}
               onRemove={(ids) => void removeItems(items.flatMap((b) => (ids.includes(b.item.id) ? [b.item] : [])))}
               onLayoutChange={saveLayout}
+              onLeaveGroups={leaveGroups}
               onViewChange={saveView}
             />
           )}

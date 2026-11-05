@@ -45,12 +45,17 @@ input::placeholder { color: #74747f; }
 input:focus { border-color: #8fb3ff; }
 input:disabled { opacity: .6; }
 .label { margin: 2px 0 -4px; color: #74747f; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-.targets { display: grid; gap: 2px; flex: none; max-height: 220px; overflow-y: auto; }
+/* Each place is its own card with room around it, so picking one feels like picking, not hitting a list line. */
+.targets { display: grid; gap: 6px; flex: none; max-height: 252px; overflow-y: auto; padding: 2px; margin: -2px; }
 .target {
-  display: flex; align-items: center; gap: 9px; width: 100%; height: 36px; padding: 0 8px 0 10px;
-  border-radius: 8px; text-align: left; color: #ececf0;
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 8px 0 12px;
+  border-radius: 10px; border: 1px solid #2b2b31; background: #202025; text-align: left; color: #ececf0;
+  transition: background 120ms, border-color 120ms, transform 80ms;
 }
-.target svg { width: 15px; height: 15px; flex: none; color: #74747f; }
+.target svg { width: 16px; height: 16px; flex: none; color: #74747f; }
+.target:hover svg, .target:focus-visible svg { color: #8fb3ff; }
+.target:active:not(:disabled) { transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) { .target { transition: none; } .target:active:not(:disabled) { transform: none; } }
 .target .name { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .target .path { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #74747f; font-size: 12px; }
 .target .enter, .target .go { display: none; flex: none; margin-left: auto; }
@@ -62,13 +67,15 @@ input:disabled { opacity: .6; }
   height: 24px; padding: 0 10px; border-radius: 999px; background: #8fb3ff; color: #0d1424;
   font-size: 12px; font-weight: 600; line-height: 24px;
 }
-.target.default { background: #212126; }
 .target.default .enter { display: block; }
-.target:hover, .target:focus-visible { background: #2a2a31; outline: none; }
-.target:hover .enter, .target:focus-visible .enter, .target.saving .enter { display: none; }
-.target:hover .go, .target:focus-visible .go, .target.saving .go { display: block; }
+.target:hover, .target:focus-visible { background: #26262c; border-color: #8fb3ff; outline: none; }
+.target:hover .enter, .target:focus-visible .enter { display: none; }
+.target:hover .go, .target:focus-visible .go { display: block; }
 .target:disabled { cursor: default; }
-.busy .target:not(.saving) { opacity: .45; background: none; }
+.target.saving { border-color: #8fb3ff; }
+.target.saving .enter { display: none; }
+.target.saving .go { display: block; }
+.busy .target:not(.saving) { opacity: .45; }
 .busy .target:not(.saving) .enter { display: none; }
 .empty { padding: 8px 10px; color: #74747f; font-size: 12px; }
 .note { color: #ffb98a; font-size: 12px; }
@@ -93,26 +100,32 @@ input:disabled { opacity: .6; }
   background: #8fb3ff; color: #0d1424; font-size: 12px; font-weight: 600; line-height: 16px; }
 .tag.inside { bottom: auto; top: 6px; left: 6px; }
 .hint {
-  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
-  height: 34px; padding: 0 14px 0 12px; border-radius: 17px; white-space: nowrap; cursor: default;
-  background: #1a1a1e; color: #ececf0; font-size: 12.5px; border: 1px solid #3a3a42; box-shadow: 0 6px 20px rgba(0,0,0,.3);
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  height: 42px; padding: 0 18px 0 15px; border-radius: 21px; white-space: nowrap; pointer-events: none;
+  background: #1a1a1e; color: #fff; font-size: 14px; font-weight: 600;
+  border: 1px solid #45454e; box-shadow: 0 10px 30px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.25);
+  animation: drop 160ms cubic-bezier(.2,.9,.3,1);
 }
-.region .hint { pointer-events: none; }
-.hint svg { width: 16px; height: 16px; flex: none; color: #8fb3ff; }
-.hint .sep { width: 1px; height: 14px; background: #3a3a42; }
-.hint .quiet { color: #7c7c87; }
-.hint button { margin: 0 -6px; padding: 4px 6px; border-radius: 6px; color: #a3a3ae; }
-.hint button:hover { background: #2a2a31; color: #ececf0; }
-.hint.miss .text { color: #ffb98a; }
+@keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
+@media (prefers-reduced-motion: reduce) { .hint { animation: none; } }
+.hint svg { width: 18px; height: 18px; flex: none; color: #8fb3ff; }
+.hint .sep { width: 1px; height: 16px; background: #3a3a42; }
+.hint kbd {
+  height: 20px; padding: 0 6px; border-radius: 5px; border: 1px solid #45454e; background: #26262c;
+  color: #a3a3ae; font: 500 11.5px/18px Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+}
 `;
 
-/** A shadow-DOM host so page styles can't touch our UI and page hotkeys don't see our typing. */
-function createHost(): { host: HTMLElement; root: ShadowRoot } {
+/**
+ * A shadow-DOM host so page styles can't touch our UI and page hotkeys don't see our typing. One at a time:
+ * a new one replaces whatever capture UI was showing, and the floating button stays hidden while one is open.
+ */
+export function createHost(css = STYLE): { host: HTMLElement; root: ShadowRoot } {
   document.querySelector(CAPTURE_TAG)?.remove();
   const host = document.createElement(CAPTURE_TAG);
   const root = host.attachShadow({ mode: 'closed' });
   const style = document.createElement('style');
-  style.textContent = STYLE;
+  style.textContent = css;
   root.append(style);
   for (const type of ['keydown', 'keyup', 'keypress'] as const) {
     host.addEventListener(type, (e) => e.stopPropagation());
@@ -130,26 +143,21 @@ const MIN_TARGET = 32;
 /**
  * Save image. Pointing at an image or video highlights it, and a click saves it whole at full resolution,
  * so with several on screen you simply point at the one you want. The page still scrolls underneath.
- * Resolves 'area' when the user switches to Capture area (for something that isn't an image, or that we
- * can't pick out), and null on Escape or a right-click. A click on nothing keeps looking.
+ * Resolves null on Escape, a right-click, or a click away from any image: all ways of leaving.
  */
-export function pickImage(pointer: Point | null): Promise<Target | 'area' | null> {
+export function pickImage(pointer: Point | null): Promise<Target | null> {
   return new Promise((resolve) => {
     const { host, root } = createHost();
     const overlay = el('div', { className: 'overlay pick' });
     const highlight = el('div', { className: 'highlight' });
     const save = el('div', { className: 'save' });
-    const text = el('span', { className: 'text', textContent: PICK_HINT });
-    const toArea = el('button', { type: 'button', textContent: 'Capture area instead' });
     const hint = el(
       'div',
       { className: 'hint' },
       icon(ICONS.image),
-      text,
+      el('span', { textContent: PICK_HINT }),
       el('span', { className: 'sep' }),
-      toArea,
-      el('span', { className: 'sep' }),
-      el('span', { className: 'quiet', textContent: 'Esc to cancel' }),
+      el('kbd', { textContent: 'Esc', title: 'Esc to cancel' }),
     );
     highlight.hidden = true;
     highlight.append(save);
@@ -167,8 +175,6 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
       overlay.classList.toggle('over', r !== null);
       highlight.hidden = r === null;
       if (!hovered || !r) return;
-      hint.classList.remove('miss');
-      text.textContent = PICK_HINT;
       Object.assign(highlight.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
       // Follow a rounded image's corners, unless the screen edge cuts it off.
       const whole = hovered.el.getBoundingClientRect();
@@ -183,7 +189,7 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
     const lookSoon = () => {
       frame ||= requestAnimationFrame(look);
     };
-    const finish = (result: Target | 'area' | null) => {
+    const finish = (result: Target | null) => {
       cancelAnimationFrame(frame);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('scroll', lookSoon, true);
@@ -201,7 +207,6 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
     window.addEventListener('scroll', lookSoon, { capture: true, passive: true });
     look();
 
-    toArea.addEventListener('click', () => finish('area'));
     overlay.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       finish(null);
@@ -211,10 +216,9 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
       lookSoon();
     });
     overlay.addEventListener('click', (e) => {
-      if (e.button !== 0 || e.composedPath().includes(hint)) return;
-      if (hovered) return finish(hovered);
-      hint.classList.add('miss');
-      text.textContent = 'No image there';
+      if (e.button !== 0) return;
+      // Clicking away from any image leaves, like Esc.
+      finish(hovered);
     });
   });
 }
@@ -232,7 +236,7 @@ export function selectArea(): Promise<Rect | null> {
       icon(ICONS.area),
       el('span', { textContent: 'Drag to capture an area' }),
       el('span', { className: 'sep' }),
-      el('span', { className: 'quiet', textContent: 'Esc to cancel' }),
+      el('kbd', { textContent: 'Esc', title: 'Esc to cancel' }),
     );
     box.hidden = true;
     box.append(tag);

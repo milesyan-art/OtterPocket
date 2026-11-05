@@ -46,6 +46,19 @@ const MIN_ITEM_SCALE = 0.05;
 const DOUBLE_CLICK_MS = 350;
 /** How far (screen px) the pointer travels before a press becomes a drag, so a click never nudges anything. */
 const DRAG_THRESHOLD = 4;
+/** How long a reference dragged out of its group is held still out there before it leaves the group. */
+const DWELL_TO_LEAVE_MS = 500;
+/** How far (screen px) the pointer may drift while held still, as a hand on a trackpad or mouse never quite stops. */
+const DWELL_SLOP = 6;
+/**
+ * With ⌥ held at the press, the other way out (being tried against resting outside): hold the reference still
+ * this long before moving, and it lifts free; let go wholly outside its group's frame and it leaves.
+ */
+const HOLD_TO_LIFT_MS = 450;
+/** How far (screen px) the pointer may wander during that hold, as pressing a trackpad or button nudges it. */
+const HOLD_SLOP = 10;
+/** How much bigger a reference that has come out of its group is drawn, about its centre: it's been picked up. */
+const LIFT_SCALE = 1.04;
 /** Wheel events closer together than this belong to one gesture, including a trackpad's glide after the fingers lift. */
 const WHEEL_GESTURE_GAP_MS = 150;
 /** Room (screen px) between the box drawn around several selected items and the items. */
@@ -64,8 +77,12 @@ export const GROUP_FRAME = {
   band: GROUP_TITLE.line + GROUP_TITLE.room * 2,
   radius: 32,
 };
-/** Group frames and titles sit behind every item. */
-const GROUP_Z = -1_000_000_000;
+/**
+ * A group's frame, title and band sit just under its lowest reference (stacking orders are whole numbers), so
+ * a group brought to the front brings its frame along, over the groups and references it now covers.
+ */
+const GROUP_LAYER = { frame: -0.5, label: -0.4, handle: -0.3 };
+const BOARD_BG = 0x141417;
 const ACCENT = 0x8fb3ff;
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif';
 
@@ -77,11 +94,19 @@ export interface ScreenRect {
 }
 
 export interface BoardEvents {
-  /** What is selected now, in the order it was picked; empty when nothing is. */
-  select(itemIds: string[]): void;
+  /**
+   * What is selected now, in the order it was picked; empty when nothing is. `groupId` is the group whose band
+   * was pressed to pick it, so a group of one reference picked by its band is the group, not the reference.
+   */
+  select(itemIds: string[], groupId: string | null): void;
   /** An item was clicked on its own (no Shift or ⌘) and let go without being moved, and is now all that's selected. */
   clicked(itemId: string): void;
   layoutChanged(updates: LayoutUpdate[]): void;
+  /**
+   * A drag left `itemIds` wholly outside their groups' frames: they leave their groups, and `updates` is where
+   * the drag left everything it moved, to be saved together as one step.
+   */
+  leftGroups(updates: LayoutUpdate[], itemIds: string[]): void;
   openSource(itemId: string): void;
   /**
    * Where the selection is on screen, so React can float things by it: the selected item, or the box around
@@ -147,16 +172,37 @@ type Drag =
       kind: 'move';
       /** Everything that moves: the whole selection. */
       ids: string[];
-      /** The item under the pointer. */
+      /** The item under the pointer; empty when the press was on a group's band. */
       pressed: string;
+      /** The group whose band was pressed, if that is what the press was on. */
+      pressedGroup: string | null;
       /** Where the press was, in board units. */
       grab: PointData;
       from: Map<string, Spot>;
       /** Items brought to the front by the press, whose new order needs saving even if nothing moves. */
       raised: string[];
+      /**
+       * For each group only some of whose references are moving, its frame as it was at the press. A reference
+       * carried wholly outside it and held still there comes out of the group.
+       */
+      homes: Map<string, ScreenRect>;
+      /**
+       * Held still outside its group long enough that the reference came out: let go out there, it leaves the
+       * group. Until then a drag only arranges, however far it goes, and the frame grows to fit.
+       */
+      lifted: boolean;
+      /** Where the pointer came to rest outside the group, waiting to see if it stays; null when it isn't. */
+      dwellAt: PointData | null;
+      /**
+       * ⌥ was held at the press: the reference comes out by being held still first (it lifts), then dropped
+       * wholly outside its group's frame, rather than by resting outside it.
+       */
+      holdFirst: boolean;
+      /** How far the pointer has carried everything, in board units. */
+      shift: PointData;
       start: PointData;
       moved: boolean;
-      /** A plain press: let go without moving, it is a click, and selects just the pressed item. */
+      /** A plain press: let go without moving, it is a click, and selects just the pressed item (or group). */
       plain: boolean;
       /**
        * The press made a new selection. Tools floating by the selection wait until it is let go, rather than
@@ -212,6 +258,15 @@ export class Board {
   private items: BoardItem[] = [];
   /** In the order it was picked. */
   private selected: string[] = [];
+  /** References being dragged wholly out of their group's frame: drawn as out of it already, and taken out on release. */
+  private leaving = new Set<string>();
+  /** Waiting for a reference dragged out of its group to be held still out there long enough to come out. */
+  private dwellTimer = 0;
+  /** With ⌥: waiting for a press on a reference to be held still long enough to lift it. */
+  private holdTimer = 0;
+
+  /** The group picked by its band, when that is what the selection is. */
+  private pickedGroup: string | null = null;
   private grayscale = false;
   private needsFit = true;
   /** The view to restore once the canvas is ready: where this board was left last time. */
@@ -234,7 +289,7 @@ export class Board {
   async init(host: HTMLElement): Promise<void> {
     await this.app.init({
       resizeTo: host,
-      background: '#141417',
+      background: BOARD_BG,
       antialias: true,
       autoDensity: true,
       resolution: window.devicePixelRatio,
@@ -296,6 +351,8 @@ export class Board {
 
   destroy(): void {
     this.destroyed = true;
+    window.clearTimeout(this.dwellTimer);
+    window.clearTimeout(this.holdTimer);
     if (!this.ready) return;
     this.ready = false;
     this.resizeObserver?.disconnect();
@@ -317,6 +374,7 @@ export class Board {
     if (boardId !== this.boardId) {
       this.boardId = boardId;
       this.selected = [];
+      this.pickedGroup = null;
       if (this.pendingReveal?.boardId !== boardId) this.pendingReveal = null;
       this.viewGlide = null;
       this.endRipple();
@@ -342,8 +400,9 @@ export class Board {
     if (this.ready) this.drawSelection();
   }
 
-  select(itemIds: string[]): void {
+  select(itemIds: string[], groupId: string | null = null): void {
     this.selected = [...new Set(itemIds)];
+    this.pickedGroup = groupId;
     if (this.ready) this.drawSelection();
   }
 
@@ -588,6 +647,7 @@ export class Board {
     const wanted = new Map(this.groupList.map((g) => [g.id, g]));
     for (const [id, view] of this.groups) {
       if (wanted.has(id)) continue;
+      if (this.hoveredGroup === id) this.hoveredGroup = null;
       view.frame.destroy();
       view.label.destroy({ children: true });
       view.handle.destroy();
@@ -610,19 +670,16 @@ export class Board {
   private createGroupView(id: string): GroupView {
     const frame = new Graphics();
     frame.eventMode = 'none';
-    frame.zIndex = GROUP_Z;
     const text = new Text({
       text: '',
       resolution: 2,
       style: textStyle(GROUP_FRAME.title, GROUP_FRAME.line, 1000, 0xa9a9b4, '600'),
     });
     const label = new Container();
-    label.zIndex = GROUP_Z + 1;
     label.eventMode = 'none';
     label.addChild(text);
-    // Behind the items like the rest of the frame, so an item laid over the band still gets its own press.
+    // Under the group's references like the rest of the frame, so one laid over the band still gets its own press.
     const handle = new Container();
-    handle.zIndex = GROUP_Z + 2;
     handle.eventMode = 'static';
     handle.on('pointerdown', (e) => this.onGroupDown(id, e));
     handle.on('pointerover', () => this.hoverGroup(id));
@@ -636,12 +693,19 @@ export class Board {
     this.drawSelection();
   }
 
-  /** Each group's items, by group id. */
+  /** A group's items on this board, back to front. */
+  private membersOf(groupId: string): string[] {
+    return (this.groupMembers().get(groupId) ?? [])
+      .sort((a, b) => a.data.placement.z - b.data.placement.z)
+      .map((n) => n.id);
+  }
+
+  /** Each group's items, by group id, leaving out those being dragged out of it. */
   private groupMembers(): Map<string, Node[]> {
     const members = new Map<string, Node[]>();
     for (const node of this.nodes.values()) {
       const id = node.data.placement.groupId;
-      if (!id) continue;
+      if (!id || this.leaving.has(node.id)) continue;
       const list = members.get(id);
       if (list) list.push(node);
       else members.set(id, [node]);
@@ -661,6 +725,8 @@ export class Board {
       const nodes = members.get(view.id);
       view.frame.clear();
       if (!nodes) {
+        // Hidden under the pointer, its band never hears the pointer leave.
+        if (this.hoveredGroup === view.id) this.hoveredGroup = null;
         view.box = null;
         view.label.visible = false;
         view.handle.visible = false;
@@ -668,20 +734,27 @@ export class Board {
       }
       const box = groupFrame(boundsOf(nodes));
       view.box = box;
+      const bottom = Math.min(...nodes.map((n) => n.data.placement.z));
+      view.frame.zIndex = bottom + GROUP_LAYER.frame;
+      view.label.zIndex = bottom + GROUP_LAYER.label;
+      view.handle.zIndex = bottom + GROUP_LAYER.handle;
       const whole = nodes.every((n) => selected.has(n.id));
       const hovered = view.id === this.hoveredGroup;
       const { radius: r, band } = GROUP_FRAME;
       const { x, y, width: w } = box;
+      const bandPath = () =>
+        view.frame
+          .moveTo(x, y + band)
+          .lineTo(x, y + r)
+          .arcTo(x, y, x + r, y, r)
+          .lineTo(x + w - r, y)
+          .arcTo(x + w, y, x + w, y + r, r)
+          .lineTo(x + w, y + band)
+          .closePath();
+      // The band is solid, so whatever it lies over doesn't show through the title; the rest stays a faint tint.
+      bandPath().fill({ color: BOARD_BG });
       view.frame.roundRect(x, y, w, box.height, r).fill({ color: 0xffffff, alpha: 0.025 });
-      view.frame
-        .moveTo(x, y + band)
-        .lineTo(x, y + r)
-        .arcTo(x, y, x + r, y, r)
-        .lineTo(x + w - r, y)
-        .arcTo(x + w, y, x + w, y + r, r)
-        .lineTo(x + w, y + band)
-        .closePath()
-        .fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
+      bandPath().fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
       view.frame
         .roundRect(x, y, w, box.height, r)
         .stroke({ width: 1.5 / zoom, color: whole ? ACCENT : hovered ? 0x7c7c88 : 0x4a4a55, alpha: whole ? 0.9 : 0.8 });
@@ -931,28 +1004,115 @@ export class Board {
     const wasSelected = before.includes(node.id);
     if (toggle && wasSelected) return this.setSelection(this.selected.filter((id) => id !== node.id));
     if (toggle) this.setSelection([...this.selected, node.id]);
-    // Pressing one of several selected items keeps them all, so they can be dragged together.
-    else if (!wasSelected) this.setSelection([node.id]);
+    // Pressing one of several selected items keeps them all, so they can be dragged together; unless they are
+    // just the item's group, which its band moves: a press on one of its items arranges (or takes out) that one.
+    else if (!wasSelected || this.isWholeGroupOf(node)) this.setSelection([node.id]);
 
     const ids = [...this.selected];
     this.drag = {
       kind: 'move',
       ids,
       pressed: node.id,
+      pressedGroup: null,
       grab: this.world.toLocal(e.global),
       from: this.spotsOf(ids),
       raised: this.bringToFront(ids),
+      homes: this.homeFrames(ids),
+      lifted: false,
+      dwellAt: null,
+      holdFirst: false,
+      shift: { x: 0, y: 0 },
       start: e.global.clone(),
       moved: false,
       plain: !toggle,
       fresh: this.selected !== before,
     };
+    // ⌥: the other way out of a group. Held still a moment, the reference lifts; dropped outside, it leaves.
+    if (e.altKey && this.drag.homes.size > 0) {
+      this.drag.holdFirst = true;
+      window.clearTimeout(this.holdTimer);
+      this.holdTimer = window.setTimeout(this.liftHeld, HOLD_TO_LIFT_MS);
+    }
     this.drawSelection();
+  }
+
+  /** With ⌥, the press was held still long enough: the reference lifts free of its group. */
+  private liftHeld = (): void => {
+    this.holdTimer = 0;
+    const drag = this.drag;
+    if (drag?.kind === 'move' && drag.holdFirst && !drag.lifted) this.setLifted(drag, true);
+  };
+
+  /** Whether what's selected is exactly `node`'s group, of more than it. */
+  private isWholeGroupOf(node: Node): boolean {
+    const groupId = node.data.placement.groupId;
+    if (!groupId) return false;
+    const members = this.membersOf(groupId);
+    return members.length > 1 && members.length === this.selected.length && members.every((id) => this.selected.includes(id));
+  }
+
+  /**
+   * Follows a drag for references carried out of their groups. Wholly outside the group's frame (as it was at the
+   * press), the pointer must rest there a moment before they come out: they grow a little, and the frame lets
+   * go of them. Carried back inside, they are back in the group and would have to wait outside again.
+   */
+  private watchDwell(drag: Extract<Drag, { kind: 'move' }>, pointer: PointData): void {
+    const outside = this.outsideHomes(drag);
+    if (drag.lifted) {
+      this.leaving = new Set(outside);
+      if (outside.length === 0) this.setLifted(drag, false);
+      return;
+    }
+    if (outside.length === 0) {
+      window.clearTimeout(this.dwellTimer);
+      this.dwellTimer = 0;
+      drag.dwellAt = null;
+      return;
+    }
+    const at = drag.dwellAt;
+    if (at && Math.hypot(pointer.x - at.x, pointer.y - at.y) <= DWELL_SLOP) return; // still resting
+    // Just got out, or moved on: wait afresh from here.
+    window.clearTimeout(this.dwellTimer);
+    drag.dwellAt = { x: pointer.x, y: pointer.y };
+    this.dwellTimer = window.setTimeout(this.comeOut, DWELL_TO_LEAVE_MS);
+  }
+
+  /** The pointer rested outside the group long enough: what's out there comes out of its groups. */
+  private comeOut = (): void => {
+    this.dwellTimer = 0;
+    const drag = this.drag;
+    if (drag?.kind !== 'move' || drag.lifted) return;
+    const outside = this.outsideHomes(drag);
+    if (outside.length === 0) return;
+    this.leaving = new Set(outside);
+    this.setLifted(drag, true);
+  };
+
+  /** Shows what a move carries as out of its groups (a little bigger, a grabbing hand) or back in. */
+  private setLifted(drag: Extract<Drag, { kind: 'move' }>, lifted: boolean): void {
+    drag.lifted = lifted;
+    drag.dwellAt = null;
+    if (!lifted) this.leaving.clear();
+    this.host?.classList.toggle('lifting', lifted);
+    this.placeDragged(drag, lifted ? LIFT_SCALE : 1);
+    this.drawSelection();
+  }
+
+  /** Puts what a move carries where the pointer has taken it, drawn `lift` times its size about its centre. */
+  private placeDragged(drag: Extract<Drag, { kind: 'move' }>, lift: number): void {
+    for (const [id, from] of drag.from) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      const grow = from.scale * (lift - 1);
+      node.root.scale.set(from.scale * lift);
+      node.root.position.set(from.x + drag.shift.x - (node.w * grow) / 2, from.y + drag.shift.y - (node.h * grow) / 2);
+    }
   }
 
   /**
    * A press on a group's top band picks up the whole group: it selects the group's items (Shift or ⌘ adds them
-   * to the selection) and dragging moves them together. A double-click renames the group.
+   * to the selection, or takes them back out when they are all in it) and dragging moves them together. A
+   * double-click renames the group.
    */
   private onGroupDown(groupId: string, e: FederatedPointerEvent): void {
     if (e.button !== 0 || this.spaceDown) return; // pans, as on an item
@@ -960,32 +1120,45 @@ export class Board {
     this.stopViewGlide();
     this.wheelHeld = true;
     this.finishGlides();
+    const adding = e.shiftKey || e.metaKey;
     const now = performance.now();
     const key = `group:${groupId}`;
-    if (this.lastDown.id === key && now - this.lastDown.time < DOUBLE_CLICK_MS) {
+    if (!adding && this.lastDown.id === key && now - this.lastDown.time < DOUBLE_CLICK_MS) {
       this.lastDown = { id: '', time: 0 };
       this.events.renameGroup(groupId);
       return;
     }
-    this.lastDown = { id: key, time: now };
-    const members = (this.groupMembers().get(groupId) ?? [])
-      .sort((a, b) => a.data.placement.z - b.data.placement.z)
-      .map((n) => n.id);
+    this.lastDown = adding ? { id: '', time: 0 } : { id: key, time: now };
+    const members = this.membersOf(groupId);
     if (members.length === 0) return;
-    const adding = e.shiftKey || e.metaKey;
     const before = this.selected;
-    this.setSelection(adding ? [...this.selected, ...members.filter((id) => !this.selected.includes(id))] : members);
+    // Shift or ⌘ on a group that is all selected takes it back out, as on an item.
+    if (adding && members.every((id) => this.selected.includes(id))) {
+      return this.setSelection(this.selected.filter((id) => !members.includes(id)));
+    }
+    if (adding) {
+      const next = [...this.selected, ...members.filter((id) => !this.selected.includes(id))];
+      this.setSelection(next, next.length === members.length ? groupId : null);
+    }
+    // Pressing a group that is already selected, alone or with more, keeps it all, so it can be dragged together.
+    else if (!members.every((id) => this.selected.includes(id))) this.setSelection(members, groupId);
     const ids = [...this.selected];
     this.drag = {
       kind: 'move',
       ids,
       pressed: '',
+      pressedGroup: groupId,
       grab: this.world.toLocal(e.global),
       from: this.spotsOf(ids),
       raised: this.bringToFront(ids),
+      homes: this.homeFrames(ids),
+      lifted: false,
+      dwellAt: null,
+      holdFirst: false,
+      shift: { x: 0, y: 0 },
       start: e.global.clone(),
       moved: false,
-      plain: false,
+      plain: !adding,
       fresh: this.selected !== before,
     };
     this.drawSelection();
@@ -1043,6 +1216,11 @@ export class Board {
       drag.moved = true;
       this.drawSelection(); // now held
     }
+    // With ⌥, carried off before the hold was up: a plain drag. A small wobble while holding isn't.
+    if (this.holdTimer && drag.kind === 'move' && Math.hypot(e.global.x - drag.start.x, e.global.y - drag.start.y) > HOLD_SLOP) {
+      window.clearTimeout(this.holdTimer);
+      this.holdTimer = 0;
+    }
     if (drag.kind === 'pan') {
       this.world.position.set(drag.startPos.x + e.global.x - drag.start.x, drag.startPos.y + e.global.y - drag.start.y);
       return this.drawSelection();
@@ -1050,9 +1228,11 @@ export class Board {
     const pointer = this.world.toLocal(e.global);
     if (drag.kind === 'select') return this.pullSelectionBox(drag, pointer, e.global);
     if (drag.kind === 'move') {
-      const dx = pointer.x - drag.grab.x;
-      const dy = pointer.y - drag.grab.y;
-      for (const [id, from] of drag.from) this.nodes.get(id)?.root.position.set(from.x + dx, from.y + dy);
+      drag.shift = { x: pointer.x - drag.grab.x, y: pointer.y - drag.grab.y };
+      this.placeDragged(drag, drag.lifted ? LIFT_SCALE : 1);
+      if (!drag.holdFirst) this.watchDwell(drag, e.global);
+      // Lifted by holding, it stays lifted wherever it goes: let go outside the group, it leaves; inside, it stays.
+      else if (drag.lifted) this.leaving = new Set(this.outsideHomes(drag));
     } else {
       const { anchor } = drag;
       const distance = Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y);
@@ -1086,7 +1266,13 @@ export class Board {
   private endDrag(): void {
     const drag = this.drag;
     this.drag = null;
-    this.host?.classList.remove('panning');
+    window.clearTimeout(this.dwellTimer);
+    window.clearTimeout(this.holdTimer);
+    this.dwellTimer = 0;
+    this.holdTimer = 0;
+    this.host?.classList.remove('panning', 'lifting');
+    // Set back down at its own size before it's saved.
+    if (drag?.kind === 'move' && drag.lifted) this.placeDragged(drag, 1);
     if (drag?.kind === 'pan') {
       // A middle click doesn't pan; only a real pan is a new view.
       if (!this.world.position.equals(drag.startPos)) this.reportView();
@@ -1094,21 +1280,51 @@ export class Board {
       this.selectionBox.clear();
     } else if (drag) {
       this.keepDragged(drag);
-      if (drag.kind === 'move' && !drag.moved && drag.plain) {
-        this.setSelection([drag.pressed]);
-        this.events.clicked(drag.pressed);
-        this.keepSelectionClear();
+      // Held with ⌥ until it lifted and let go without moving, it's neither a click nor a move.
+      if (drag.kind === 'move' && !drag.moved && drag.plain && !drag.lifted) {
+        if (drag.pressedGroup) {
+          this.setSelection(this.membersOf(drag.pressedGroup), drag.pressedGroup);
+        } else {
+          this.setSelection([drag.pressed]);
+          this.events.clicked(drag.pressed);
+          this.keepSelectionClear();
+        }
       }
     }
     this.drawSelection(); // no longer held
     this.revealPending();
   }
 
+  /**
+   * For each group only some of whose references are among `ids`, its whole frame as it is now. It stays put
+   * for the drag: a reference must clear the group as it was to come out, however small the rest of it is.
+   */
+  private homeFrames(ids: string[]): Map<string, ScreenRect> {
+    const moving = new Set(ids);
+    const homes = new Map<string, ScreenRect>();
+    for (const [groupId, nodes] of this.groupMembers()) {
+      const staying = nodes.filter((n) => !moving.has(n.id));
+      if (staying.length < nodes.length && staying.length > 0) homes.set(groupId, groupFrame(boundsOf(nodes)));
+    }
+    return homes;
+  }
+
+  /** Which moving references are now wholly outside their group's frame as it was at the press. */
+  private outsideHomes(drag: Extract<Drag, { kind: 'move' }>): string[] {
+    return drag.ids.filter((id) => {
+      const node = this.nodes.get(id);
+      const groupId = node?.data.placement.groupId;
+      const home = groupId ? drag.homes.get(groupId) : undefined;
+      return !!node && !!home && !overlaps(boundsOf([node]), home);
+    });
+  }
+
   /** Saves where a drag left things, and the new stacking order of whatever the press brought to the front. */
   private keepDragged(drag: Extract<Drag, { kind: 'move' | 'scale' }>): void {
     const raised = drag.kind === 'move' ? drag.raised : [];
     const updates: LayoutUpdate[] = [];
-    for (const id of drag.ids) {
+    // What the press raised counts too: a hold can leave some of it behind, raised but no longer moving.
+    for (const id of new Set([...drag.ids, ...raised])) {
       const node = this.nodes.get(id);
       if (!node) continue;
       const p = node.data.placement;
@@ -1120,14 +1336,26 @@ export class Board {
       p.scale = scale;
       updates.push({ itemId: id, x, y, scale, z: p.z });
     }
-    if (updates.length > 0) this.events.layoutChanged(updates);
+    const leaving = [...this.leaving];
+    this.leaving.clear();
+    if (leaving.length > 0) {
+      this.events.leftGroups(updates, leaving);
+      // Out of the group here at once (after React has read which groups they were in), so its frame doesn't
+      // reach for them again until the board reloads.
+      for (const id of leaving) {
+        const node = this.nodes.get(id);
+        if (node) node.data.placement.groupId = null;
+      }
+    } else if (updates.length > 0) this.events.layoutChanged(updates);
   }
 
   /** Changes what is selected and tells React; nothing happens when it is the same as before. */
-  private setSelection(ids: string[]): void {
-    if (ids.length === this.selected.length && ids.every((id, i) => id === this.selected[i])) return;
+  private setSelection(ids: string[], groupId: string | null = null): void {
+    const same = ids.length === this.selected.length && ids.every((id, i) => id === this.selected[i]);
+    if (same && groupId === this.pickedGroup) return;
     this.selected = ids;
-    this.events.select(ids);
+    this.pickedGroup = groupId;
+    this.events.select(ids, groupId);
     this.drawSelection();
   }
 
@@ -1247,7 +1475,8 @@ export class Board {
     const zoom = this.world.scale.x;
     let box = boundsOf(nodes);
     let oneGroup = false;
-    if (nodes.length > 1) {
+    // A group of one picked by its band is the group too: the box (and the tools above it) take in its frame.
+    if (nodes.length > 1 || this.pickedGroup) {
       const selected = new Set(this.selected);
       for (const [id, groupNodes] of members) {
         if (!groupNodes.every((n) => selected.has(n.id))) continue;
@@ -1279,7 +1508,9 @@ export class Board {
     const bottomRight = this.world.toGlobal({ x: box.x + box.width, y: box.y + box.height });
     const drag = this.drag;
     const held =
-      !!drag && drag.kind !== 'pan' && (drag.kind === 'scale' || drag.moved || (drag.kind === 'move' && drag.fresh));
+      !!drag &&
+      drag.kind !== 'pan' &&
+      (drag.kind === 'scale' || drag.moved || (drag.kind === 'move' && (drag.fresh || drag.lifted)));
     this.events.selectionMoved(
       { x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y },
       held,

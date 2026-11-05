@@ -49,6 +49,8 @@ const SECTIONS: Section[] = [
       { action: 'Select all', keys: ['⌘', 'A'] },
       { action: 'Group', keys: ['⌘', 'G'] },
       { action: 'Ungroup', keys: ['⇧', '⌘', 'G'] },
+      { action: 'Take out of group', keys: [{ gesture: 'button', label: 'Drag Out and Hold' }] },
+      { action: 'Lift out of group', keys: ['⌥', { gesture: 'button', label: 'Hold, Drag Out' }] },
       { action: 'Remove', keys: ['⌫'] },
     ],
   },
