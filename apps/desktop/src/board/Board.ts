@@ -71,24 +71,23 @@ const WHEEL_GESTURE_GAP_MS = 150;
 /** Room (screen px) between the box drawn around several selected items and the items. */
 const GROUP_PAD = 6;
 /**
- * A group's title: a label that stays one size on screen whatever the zoom (screen px), just above the
- * top-left corner of its frame and cut to the frame's width. It takes no room on the board, so a frame is
- * only its references and the room around them, the same shape at every zoom. Below `minFrame` wide on
- * screen the frame is too small to name and the label is left out.
+ * A group's title bar, in screen px: it stays one size whatever the zoom, sits on top of the frame across its
+ * whole width, and pressing anywhere on it picks up the group. Styled like the floating toolbars (their
+ * panel colour, hairline edges, 6px corners, 12.5px text). It takes no room on the board, so a frame is only
+ * its references and the room around them, the same shape at every zoom. Below `minFrame` wide on screen
+ * the frame is too small to carry a bar and is drawn without one.
  */
-const GROUP_LABEL = { size: 14, line: 20, gap: 6, minFrame: 48 };
+const GROUP_BAR = { height: 28, text: 12.5, line: 16, inset: 10, radius: 6, minFrame: 56 };
 /**
  * Room inside a group's frame around its references, as a share of their typical shorter side: the even gap
  * Tidy up leaves between references, so small pictures get a snug frame and 4K frames a roomier one. A fixed
  * size here looked huge around references someone had made small.
  */
 const GROUP_PAD_SHARE = 0.06;
-/** How round a frame's corners are, as a share of that room. */
-const GROUP_RADIUS_SHARE = 0.75;
 /**
- * Room kept free above a group's frame for its label when the app lays groups out (arranging, gathering a new
- * group), as a share of the same typical side. The label's size on the board changes with the zoom, so this
- * covers the usual zooms; zoomed far out, a label may lie over what's above it.
+ * Room kept free above a group's frame for its title bar when the app lays groups out (arranging, gathering
+ * a new group), as a share of the same typical side. The bar's size on the board changes with the zoom, so
+ * this covers the usual zooms; zoomed far out, a bar may lie over what's above it.
  */
 const GROUP_LABEL_ROOM_SHARE = 0.2;
 /**
@@ -718,7 +717,7 @@ export class Board {
     const text = new Text({
       text: '',
       resolution: 2,
-      style: textStyle(GROUP_LABEL.size, GROUP_LABEL.line, 1000, 0xa9a9b4, '600'),
+      style: textStyle(GROUP_BAR.text, GROUP_BAR.line, 1000, 0xa9a9b4, '500'),
     });
     const label = new Container();
     label.eventMode = 'none';
@@ -759,9 +758,9 @@ export class Board {
   }
 
   /**
-   * Draws each group's frame around its items as they are now (mid-drag too), and its title as a label just
-   * above it (GROUP_LABEL) that lights up under the pointer, as the place to pick the group up. A group whose
-   * items are all selected is outlined in the selection colour.
+   * Draws each group's frame around its items as they are now (mid-drag too), with its title bar on top
+   * (GROUP_BAR) that lights up under the pointer, as the place to pick the group up. A group whose items
+   * are all selected is outlined in the selection colour.
    */
   private drawGroups(members: Map<string, Node[]>): void {
     const zoom = this.world.scale.x;
@@ -785,44 +784,77 @@ export class Board {
       view.label.zIndex = bottom + GROUP_LAYER.label;
       view.handle.zIndex = bottom + GROUP_LAYER.handle;
       const whole = nodes.every((n) => selected.has(n.id));
-      const hovered = view.id === this.hoveredGroup;
-      const r = groupPad(boxes) * GROUP_RADIUS_SHARE;
-      view.frame.roundRect(box.x, box.y, box.width, box.height, r).fill({ color: 0xffffff, alpha: hovered ? 0.04 : 0.025 });
-      view.frame
-        .roundRect(box.x, box.y, box.width, box.height, r)
-        .stroke({ width: 1.5 / zoom, color: whole ? ACCENT : hovered ? 0x7c7c88 : 0x4a4a55, alpha: whole ? 0.9 : 0.8 });
-
-      // The label: drawn at its own size on screen (scaled against the zoom), its line ending GROUP_LABEL.gap
-      // above the frame.
       const wide = box.width * zoom;
-      const named = wide >= GROUP_LABEL.minFrame;
-      if (!named && this.hoveredGroup === view.id) this.hoveredGroup = null;
+      const barred = wide >= GROUP_BAR.minFrame;
+      if (!barred && this.hoveredGroup === view.id) this.hoveredGroup = null;
+      const hovered = view.id === this.hoveredGroup;
+
+      // Everything is drawn in board units, so screen sizes are divided by the zoom. The bar's top corners are
+      // rounded like a toolbar's; the frame's bottom ones the same, or less where the room inside is smaller.
+      const { x, y, width: w } = box;
+      const floor = y + box.height;
+      const bar = barred ? GROUP_BAR.height / zoom : 0;
+      const top = y - bar;
+      const rTop = GROUP_BAR.radius / zoom;
+      const rBottom = Math.min(GROUP_BAR.radius / zoom, groupPad(boxes));
+      const outline = () =>
+        view.frame
+          .moveTo(x, top + rTop)
+          .arcTo(x, top, x + rTop, top, rTop)
+          .lineTo(x + w - rTop, top)
+          .arcTo(x + w, top, x + w, top + rTop, rTop)
+          .lineTo(x + w, floor - rBottom)
+          .arcTo(x + w, floor, x + w - rBottom, floor, rBottom)
+          .lineTo(x + rBottom, floor)
+          .arcTo(x, floor, x, floor - rBottom, rBottom)
+          .closePath();
+      outline().fill({ color: 0xffffff, alpha: 0.025 });
+      if (barred) {
+        // Solid, so nothing it lies over shows through the title.
+        view.frame
+          .moveTo(x, y)
+          .lineTo(x, top + rTop)
+          .arcTo(x, top, x + rTop, top, rTop)
+          .lineTo(x + w - rTop, top)
+          .arcTo(x + w, top, x + w, top + rTop, rTop)
+          .lineTo(x + w, y)
+          .closePath()
+          .fill({ color: hovered ? 0x212126 : 0x1a1a1e });
+        view.frame.moveTo(x, y).lineTo(x + w, y).stroke({ width: 1 / zoom, color: 0x2b2b31 });
+      }
+      outline().stroke({ width: 1 / zoom, color: whole ? ACCENT : hovered ? 0x55555f : 0x3a3a42, alpha: whole ? 0.9 : 1 });
+
+      // The title, at its own size on screen (scaled against the zoom), in the middle of the bar's height.
       const fill = view.title ? (hovered ? 0xececf0 : 0xa9a9b4) : hovered ? 0xa9a9b4 : 0x74747f;
       if (view.text.style.fill !== fill) view.text.style.fill = fill;
-      this.fitTitle(view, wide);
-      const top = box.y - (GROUP_LABEL.gap + GROUP_LABEL.line) / zoom;
+      this.fitTitle(view, wide - GROUP_BAR.inset * 2);
       view.label.scale.set(1 / zoom);
-      view.label.position.set(box.x, top);
-      view.label.visible = named && view.id !== this.editingGroup;
-      // Pressing the title picks up the group; a little slop around it, as it is only one line of text.
+      view.label.position.set(x + GROUP_BAR.inset / zoom, top + (GROUP_BAR.height - GROUP_BAR.line) / 2 / zoom);
+      view.label.visible = barred && view.id !== this.editingGroup;
+      // Anywhere on the bar picks up the group.
       view.handle.scale.set(1 / zoom);
-      view.handle.position.set(box.x, top);
-      view.handle.hitArea = new Rectangle(-4, -4, Math.min(wide, view.text.width) + 8, GROUP_LABEL.line + 8);
-      view.handle.visible = named;
+      view.handle.position.set(x, top);
+      view.handle.hitArea = new Rectangle(0, 0, wide, GROUP_BAR.height);
+      view.handle.visible = barred;
     }
 
     const editing = this.editingGroup ? this.groups.get(this.editingGroup) : undefined;
     if (!editing?.box) return this.events.titleMoved(null, 0);
     const corner = this.world.toGlobal({ x: editing.box.x, y: editing.box.y });
     this.events.titleMoved(
-      { x: corner.x, y: corner.y - GROUP_LABEL.gap - GROUP_LABEL.line, width: editing.box.width * zoom, height: GROUP_LABEL.line },
-      GROUP_LABEL.size,
+      {
+        x: corner.x + GROUP_BAR.inset,
+        y: corner.y - GROUP_BAR.height,
+        width: editing.box.width * zoom - GROUP_BAR.inset * 2,
+        height: GROUP_BAR.height,
+      },
+      GROUP_BAR.text,
     );
   }
 
-  /** The room a group's label takes above its frame, in board units at the zoom now. */
+  /** The room a group's title bar takes above its frame, in board units at the zoom now. */
   private labelRoom(): number {
-    return (GROUP_LABEL.gap + GROUP_LABEL.line) / this.world.scale.x;
+    return GROUP_BAR.height / this.world.scale.x;
   }
 
   /**
