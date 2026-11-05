@@ -45,12 +45,17 @@ input::placeholder { color: #74747f; }
 input:focus { border-color: #8fb3ff; }
 input:disabled { opacity: .6; }
 .label { margin: 2px 0 -4px; color: #74747f; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-.targets { display: grid; gap: 2px; flex: none; max-height: 220px; overflow-y: auto; }
+/* Each place is its own card with room around it, so picking one feels like picking, not hitting a list line. */
+.targets { display: grid; gap: 6px; flex: none; max-height: 252px; overflow-y: auto; padding: 2px; margin: -2px; }
 .target {
-  display: flex; align-items: center; gap: 9px; width: 100%; height: 36px; padding: 0 8px 0 10px;
-  border-radius: 8px; text-align: left; color: #ececf0;
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 8px 0 12px;
+  border-radius: 10px; border: 1px solid #2b2b31; background: #202025; text-align: left; color: #ececf0;
+  transition: background 120ms, border-color 120ms, transform 80ms;
 }
-.target svg { width: 15px; height: 15px; flex: none; color: #74747f; }
+.target svg { width: 16px; height: 16px; flex: none; color: #74747f; }
+.target:hover svg, .target:focus-visible svg { color: #8fb3ff; }
+.target:active:not(:disabled) { transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) { .target { transition: none; } .target:active:not(:disabled) { transform: none; } }
 .target .name { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .target .path { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #74747f; font-size: 12px; }
 .target .enter, .target .go { display: none; flex: none; margin-left: auto; }
@@ -62,13 +67,15 @@ input:disabled { opacity: .6; }
   height: 24px; padding: 0 10px; border-radius: 999px; background: #8fb3ff; color: #0d1424;
   font-size: 12px; font-weight: 600; line-height: 24px;
 }
-.target.default { background: #212126; }
 .target.default .enter { display: block; }
-.target:hover, .target:focus-visible { background: #2a2a31; outline: none; }
-.target:hover .enter, .target:focus-visible .enter, .target.saving .enter { display: none; }
-.target:hover .go, .target:focus-visible .go, .target.saving .go { display: block; }
+.target:hover, .target:focus-visible { background: #26262c; border-color: #8fb3ff; outline: none; }
+.target:hover .enter, .target:focus-visible .enter { display: none; }
+.target:hover .go, .target:focus-visible .go { display: block; }
 .target:disabled { cursor: default; }
-.busy .target:not(.saving) { opacity: .45; background: none; }
+.target.saving { border-color: #8fb3ff; }
+.target.saving .enter { display: none; }
+.target.saving .go { display: block; }
+.busy .target:not(.saving) { opacity: .45; }
 .busy .target:not(.saving) .enter { display: none; }
 .empty { padding: 8px 10px; color: #74747f; font-size: 12px; }
 .note { color: #ffb98a; font-size: 12px; }

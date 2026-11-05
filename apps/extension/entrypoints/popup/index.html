@@ -8,32 +8,28 @@
   </head>
   <body>
     <header>
-      <img class="mark" src="/icon/48.png" alt="" />
-      <b>Otter Pocket</b>
+      <span class="title">Otter Pocket</span>
       <span id="status" class="status">Checking…</span>
     </header>
     <section id="actions" class="group" aria-label="Save from this page"></section>
     <p id="problem" class="problem" hidden></p>
     <section class="group" aria-label="Settings">
-      <label class="row tall" for="dock">
+      <label class="row quiet" for="dock" title="An Otter Pocket button beside the scrollbar on every page">
         <span data-icon="dock"></span>
-        <span class="label">
-          Floating button
-          <small>Beside the scrollbar on every page</small>
-        </span>
+        <span class="label">Floating button</span>
         <input id="dock" class="switch" type="checkbox" role="switch" />
       </label>
       <p id="dock-note" class="note" hidden>
         <span id="dock-note-text"></span>
         <button id="show-here" type="button">Show here</button>
       </p>
-      <button id="shortcuts" class="row" type="button">
+      <button id="shortcuts" class="row quiet" type="button">
         <span data-icon="keyboard"></span>
         <span class="label">Keyboard shortcuts</span>
         <span class="aside">Change <span data-icon="external"></span></span>
       </button>
     </section>
-    <p class="tip">Or right-click any image or video → <b>Save to Otter Pocket</b></p>
+    <p class="tip"><span>Or right-click any image or video → <b>Save to Otter Pocket</b></span></p>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
