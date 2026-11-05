@@ -40,6 +40,8 @@ interface Props {
   onEditTitle(groupId: string | null): void;
   onRenameGroup(groupId: string, title: string): void;
   onLayoutChange(updates: LayoutUpdate[]): void;
+  /** References dragged wholly out of their groups' frames: they leave the groups, and the move is kept with it. */
+  onLeaveGroups(updates: LayoutUpdate[], itemIds: string[]): void;
   onViewChange(boardId: string, view: BoardView): void;
 }
 
@@ -59,6 +61,7 @@ export function BoardCanvas(props: Props) {
       clicked: (id) => latest.current.onInspect(id),
       openSource: (id) => latest.current.onOpenSource(id),
       layoutChanged: (updates) => latest.current.onLayoutChange(updates),
+      leftGroups: (updates, ids) => latest.current.onLeaveGroups(updates, ids),
       selectionMoved: (rect, held) => setSelection(rect && { rect, held }),
       viewChanged: (boardId, view) => latest.current.onViewChange(boardId, view),
       revealed: (id) => latest.current.onRevealed(id),

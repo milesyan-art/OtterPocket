@@ -1145,7 +1145,9 @@ kbd {
   cursor: grab !important;
 }
 
-.board-canvas.panning canvas {
+.board-canvas.panning canvas,
+/* A reference dragged out of its group and held there until it came out. */
+.board-canvas.lifting canvas {
   cursor: grabbing !important;
 }
 

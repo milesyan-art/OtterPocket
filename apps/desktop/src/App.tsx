@@ -578,6 +578,17 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     void changeGroups(changes, wholeGroup ? 'Ungroup' : 'Take out of group', message);
   };
 
+  /** References dragged wholly out of their groups' frames leave them, in one step with the move. */
+  const leaveGroups = (moves: LayoutUpdate[], itemIds: string[]) => {
+    const leaving = new Set(itemIds);
+    const from = [...new Set(itemIds.flatMap((id) => onBoard.get(id)?.placement.groupId ?? []))];
+    if (from.length === 0) return void saveLayout(moves);
+    const changes = from.map((id) => ({ id, title: titleOf(id), itemIds: membersOf(id).filter((m) => !leaving.has(m)) }));
+    const refs = itemIds.length === 1 ? '1 reference' : `${itemIds.length} references`;
+    const message = `Took ${refs} out of ${from.length === 1 ? named(from[0]) : 'their groups'}`;
+    void changeGroups(changes, 'Take out of group', message, undefined, moves);
+  };
+
   const renameGroup = (groupId: string, title: string) =>
     void changeGroups([{ id: groupId, title, itemIds: membersOf(groupId) }], 'Rename group', null);
 
@@ -691,6 +702,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
               onOpenSource={openSourceById}
               onRemove={(ids) => void removeItems(items.flatMap((b) => (ids.includes(b.item.id) ? [b.item] : [])))}
               onLayoutChange={saveLayout}
+              onLeaveGroups={leaveGroups}
               onViewChange={saveView}
             />
           )}
