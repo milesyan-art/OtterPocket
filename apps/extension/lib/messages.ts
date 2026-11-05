@@ -12,6 +12,13 @@ export interface BeginCaptureMessage {
   mediaType?: string;
 }
 
+/** Background → content script: the toolbar button was clicked. Opens the menu in the page, or closes it. */
+export interface ToggleMenuMessage {
+  type: 'toggle-menu';
+}
+
+export type PageMessage = BeginCaptureMessage | ToggleMenuMessage;
+
 export interface Rect {
   x: number;
   y: number;
@@ -28,7 +35,9 @@ export type BackgroundMessage =
   | { type: 'save-capture'; request: CaptureRequest }
   | { type: 'start-capture'; tabId: number; mode: CaptureMode }
   /** Replies with each command's keys, '' where none is set. */
-  | { type: 'get-shortcuts' };
+  | { type: 'get-shortcuts' }
+  /** Opens Chrome's shortcuts page, which only an extension page or the background may open. */
+  | { type: 'open-shortcuts' };
 
 export interface StatusResponse {
   /** Whether the desktop app answered just now. */

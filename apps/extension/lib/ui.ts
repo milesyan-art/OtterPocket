@@ -18,6 +18,32 @@ export const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
+/**
+ * The look of the menus drawn in the page: the floating button's and the toolbar button's. One style, so the
+ * two can't drift apart. Where each one sits is up to it.
+ */
+export const MENU_STYLE = `
+.menu {
+  width: 268px; padding: 4px 6px 6px; border-radius: 12px;
+  background: #1a1a1e; color: #ececf0; border: 1px solid #3a3a42; box-shadow: 0 14px 40px rgba(0,0,0,.4);
+  font-size: 13px; line-height: 1.3;
+}
+.title { padding: 7px 8px 5px; color: #7c7c87; font-size: 11px; font-weight: 600; }
+.item { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 8px; border-radius: 7px; text-align: left; }
+.item svg { width: 16px; height: 16px; flex: none; color: #a3a3ae; }
+.item .label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item:hover, .item:focus-visible { background: #2a2a31; outline: none; }
+.item:hover svg, .item:focus-visible svg { color: #ececf0; }
+.item:disabled { opacity: .4; background: none; cursor: default; }
+.item.quiet { color: #a3a3ae; font-size: 12.5px; }
+.keys { display: flex; gap: 3px; }
+kbd {
+  min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid #3a3a42; background: #232328;
+  color: #a3a3ae; font: 500 11px/16px Inter, -apple-system, BlinkMacSystemFont, sans-serif; text-align: center;
+}
+.sep { height: 1px; margin: 5px 2px; background: #2a2a31; }
+`;
+
 /** Tiny element builder: `el('button', { className: 'save' }, 'Save')`. */
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,

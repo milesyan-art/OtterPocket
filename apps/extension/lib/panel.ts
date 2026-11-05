@@ -100,26 +100,32 @@ input:disabled { opacity: .6; }
   background: #8fb3ff; color: #0d1424; font-size: 12px; font-weight: 600; line-height: 16px; }
 .tag.inside { bottom: auto; top: 6px; left: 6px; }
 .hint {
-  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
-  height: 34px; padding: 0 14px 0 12px; border-radius: 17px; white-space: nowrap; cursor: default;
-  background: #1a1a1e; color: #ececf0; font-size: 12.5px; border: 1px solid #3a3a42; box-shadow: 0 6px 20px rgba(0,0,0,.3);
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  height: 42px; padding: 0 18px 0 15px; border-radius: 21px; white-space: nowrap; pointer-events: none;
+  background: #1a1a1e; color: #fff; font-size: 14px; font-weight: 600;
+  border: 1px solid #45454e; box-shadow: 0 10px 30px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.25);
+  animation: drop 160ms cubic-bezier(.2,.9,.3,1);
 }
-.region .hint { pointer-events: none; }
-.hint svg { width: 16px; height: 16px; flex: none; color: #8fb3ff; }
-.hint .sep { width: 1px; height: 14px; background: #3a3a42; }
-.hint .quiet { color: #7c7c87; }
-.hint button { margin: 0 -6px; padding: 4px 6px; border-radius: 6px; color: #a3a3ae; }
-.hint button:hover { background: #2a2a31; color: #ececf0; }
-.hint.miss .text { color: #ffb98a; }
+@keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
+@media (prefers-reduced-motion: reduce) { .hint { animation: none; } }
+.hint svg { width: 18px; height: 18px; flex: none; color: #8fb3ff; }
+.hint .sep { width: 1px; height: 16px; background: #3a3a42; }
+.hint kbd {
+  height: 20px; padding: 0 6px; border-radius: 5px; border: 1px solid #45454e; background: #26262c;
+  color: #a3a3ae; font: 500 11.5px/18px Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+}
 `;
 
-/** A shadow-DOM host so page styles can't touch our UI and page hotkeys don't see our typing. */
-function createHost(): { host: HTMLElement; root: ShadowRoot } {
+/**
+ * A shadow-DOM host so page styles can't touch our UI and page hotkeys don't see our typing. One at a time:
+ * a new one replaces whatever capture UI was showing, and the floating button stays hidden while one is open.
+ */
+export function createHost(css = STYLE): { host: HTMLElement; root: ShadowRoot } {
   document.querySelector(CAPTURE_TAG)?.remove();
   const host = document.createElement(CAPTURE_TAG);
   const root = host.attachShadow({ mode: 'closed' });
   const style = document.createElement('style');
-  style.textContent = STYLE;
+  style.textContent = css;
   root.append(style);
   for (const type of ['keydown', 'keyup', 'keypress'] as const) {
     host.addEventListener(type, (e) => e.stopPropagation());
@@ -137,26 +143,21 @@ const MIN_TARGET = 32;
 /**
  * Save image. Pointing at an image or video highlights it, and a click saves it whole at full resolution,
  * so with several on screen you simply point at the one you want. The page still scrolls underneath.
- * Resolves 'area' when the user switches to Capture area (for something that isn't an image, or that we
- * can't pick out), and null on Escape or a right-click. A click on nothing keeps looking.
+ * Resolves null on Escape, a right-click, or a click away from any image: all ways of leaving.
  */
-export function pickImage(pointer: Point | null): Promise<Target | 'area' | null> {
+export function pickImage(pointer: Point | null): Promise<Target | null> {
   return new Promise((resolve) => {
     const { host, root } = createHost();
     const overlay = el('div', { className: 'overlay pick' });
     const highlight = el('div', { className: 'highlight' });
     const save = el('div', { className: 'save' });
-    const text = el('span', { className: 'text', textContent: PICK_HINT });
-    const toArea = el('button', { type: 'button', textContent: 'Capture area instead' });
     const hint = el(
       'div',
       { className: 'hint' },
       icon(ICONS.image),
-      text,
+      el('span', { textContent: PICK_HINT }),
       el('span', { className: 'sep' }),
-      toArea,
-      el('span', { className: 'sep' }),
-      el('span', { className: 'quiet', textContent: 'Esc to cancel' }),
+      el('kbd', { textContent: 'Esc', title: 'Esc to cancel' }),
     );
     highlight.hidden = true;
     highlight.append(save);
@@ -174,8 +175,6 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
       overlay.classList.toggle('over', r !== null);
       highlight.hidden = r === null;
       if (!hovered || !r) return;
-      hint.classList.remove('miss');
-      text.textContent = PICK_HINT;
       Object.assign(highlight.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
       // Follow a rounded image's corners, unless the screen edge cuts it off.
       const whole = hovered.el.getBoundingClientRect();
@@ -190,7 +189,7 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
     const lookSoon = () => {
       frame ||= requestAnimationFrame(look);
     };
-    const finish = (result: Target | 'area' | null) => {
+    const finish = (result: Target | null) => {
       cancelAnimationFrame(frame);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('scroll', lookSoon, true);
@@ -208,7 +207,6 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
     window.addEventListener('scroll', lookSoon, { capture: true, passive: true });
     look();
 
-    toArea.addEventListener('click', () => finish('area'));
     overlay.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       finish(null);
@@ -218,10 +216,9 @@ export function pickImage(pointer: Point | null): Promise<Target | 'area' | null
       lookSoon();
     });
     overlay.addEventListener('click', (e) => {
-      if (e.button !== 0 || e.composedPath().includes(hint)) return;
-      if (hovered) return finish(hovered);
-      hint.classList.add('miss');
-      text.textContent = 'No image there';
+      if (e.button !== 0) return;
+      // Clicking away from any image leaves, like Esc.
+      finish(hovered);
     });
   });
 }
@@ -239,7 +236,7 @@ export function selectArea(): Promise<Rect | null> {
       icon(ICONS.area),
       el('span', { textContent: 'Drag to capture an area' }),
       el('span', { className: 'sep' }),
-      el('span', { className: 'quiet', textContent: 'Esc to cancel' }),
+      el('kbd', { textContent: 'Esc', title: 'Esc to cancel' }),
     );
     box.hidden = true;
     box.append(tag);

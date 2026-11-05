@@ -5,7 +5,7 @@ import { ask, type CaptureMode } from './messages';
 import { largestVideo } from './page';
 import { CAPTURE_TAG, showMessage } from './panel';
 import { getSettings, onSettingsChanged, setHiddenOn, updateSettings, type Settings } from './settings';
-import { ICONS, el, icon, keycaps } from './ui';
+import { ICONS, MENU_STYLE, el, icon, keycaps } from './ui';
 
 const DOCK_TAG = 'otter-pocket-dock';
 /** Where the user last dragged the button to, as a fraction of the window's height. Per computer: screens differ. */
@@ -34,29 +34,12 @@ button { margin: 0; padding: 0; border: 0; background: none; color: inherit; fon
 .tab img { width: 30px; height: 30px; border-radius: 7px; pointer-events: none; -webkit-user-drag: none; }
 .tab:focus-visible { outline: 2px solid #8fb3ff; outline-offset: 2px; }
 .dock.dragging .tab { cursor: grabbing; }
-.menu {
-  position: absolute; right: calc(100% + 8px); width: 268px; padding: 4px 6px 6px; border-radius: 12px;
-  background: #1a1a1e; color: #ececf0; border: 1px solid #3a3a42; box-shadow: 0 14px 40px rgba(0,0,0,.4);
-  font-size: 13px; line-height: 1.3; animation: in 90ms cubic-bezier(.2,.9,.3,1);
-}
+${MENU_STYLE}
+.menu { position: absolute; right: calc(100% + 8px); animation: in 90ms cubic-bezier(.2,.9,.3,1); }
 /* Bridges the gap to the button, so the pointer can cross it without the menu closing. */
 .menu::after { content: ""; position: absolute; top: 0; bottom: 0; left: 100%; width: 10px; }
 @keyframes in { from { opacity: 0; transform: translateX(3px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
-.title { padding: 7px 8px 5px; color: #7c7c87; font-size: 11px; font-weight: 600; }
-.item { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 8px; border-radius: 7px; text-align: left; }
-.item svg { width: 16px; height: 16px; flex: none; color: #a3a3ae; }
-.item .label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.item:hover, .item:focus-visible { background: #2a2a31; outline: none; }
-.item:hover svg, .item:focus-visible svg { color: #ececf0; }
-.item:disabled { opacity: .4; background: none; cursor: default; }
-.item.quiet { color: #a3a3ae; font-size: 12.5px; }
-.keys { display: flex; gap: 3px; }
-kbd {
-  min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid #3a3a42; background: #232328;
-  color: #a3a3ae; font: 500 11px/16px Inter, -apple-system, BlinkMacSystemFont, sans-serif; text-align: center;
-}
-.sep { height: 1px; margin: 5px 2px; background: #2a2a31; }
 `;
 
 export interface Dock {

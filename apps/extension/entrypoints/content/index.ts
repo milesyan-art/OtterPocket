@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { parseSeekFragment, type CaptureImage } from '@otterpocket/shared';
 import { blobToDataUrl } from '../../lib/images';
-import { ask, type BeginCaptureMessage, type CaptureMode, type Draft, type StatusResponse } from '../../lib/messages';
+import { ask, type BeginCaptureMessage, type CaptureMode, type Draft, type PageMessage, type StatusResponse } from '../../lib/messages';
 import {
   baseSource,
   findMainVideo,
@@ -18,6 +18,7 @@ import {
 } from '../../lib/page';
 import { createDock, type Dock } from '../../lib/dock';
 import { openSavePanel, pickImage, selectArea, showMessage } from '../../lib/panel';
+import { toggleToolbarMenu } from '../../lib/toolbar-menu';
 
 let dock: Dock | undefined;
 
@@ -35,12 +36,16 @@ export default defineContentScript({
     document.addEventListener('contextmenu', track, true);
     document.addEventListener('pointermove', track, { capture: true, passive: true });
 
-    const start = (message: BeginCaptureMessage) =>
-      capture(message, pointer).catch((e: unknown) => showMessage(e instanceof Error ? e.message : String(e)));
-    browser.runtime.onMessage.addListener((message: BeginCaptureMessage, _sender, sendResponse) => {
-      if (message.type !== 'begin-capture') return;
-      sendResponse(true);
-      void start(message);
+    const start = (message: BeginCaptureMessage, fromMenu = false) =>
+      capture(message, pointer, fromMenu).catch((e: unknown) => showMessage(e instanceof Error ? e.message : String(e)));
+    browser.runtime.onMessage.addListener((message: PageMessage, _sender, sendResponse) => {
+      if (message.type === 'toggle-menu') {
+        sendResponse(true);
+        toggleToolbarMenu((mode) => void start({ type: 'begin-capture', mode }, true));
+      } else if (message.type === 'begin-capture') {
+        sendResponse(true);
+        void start(message);
+      }
     });
     dock = createDock((mode) => void start({ type: 'begin-capture', mode }));
 
@@ -48,10 +53,11 @@ export default defineContentScript({
   },
 });
 
-async function capture(message: BeginCaptureMessage, pointer: Point): Promise<void> {
+/** `fromMenu`: the toolbar menu was just closed, and is still on screen until the page repaints. */
+async function capture(message: BeginCaptureMessage, pointer: Point, fromMenu = false): Promise<void> {
   const status = ask<StatusResponse>({ type: 'get-status' });
-  // The floating button steps aside first, so it is never in a screenshot.
-  if (dock?.setBusy(true)) await afterRepaint();
+  // The floating button and the menu step aside first, so they are never in a screenshot.
+  if (dock?.setBusy(true) || fromMenu) await afterRepaint();
   try {
     const draft = await makeDraft(message.mode, message, pointer);
     if (draft) openSavePanel(draft, await status);
@@ -65,7 +71,6 @@ async function makeDraft(mode: CaptureMode, message: BeginCaptureMessage, pointe
   switch (mode) {
     case 'image': {
       const picked = await pickImage(pointer);
-      if (picked === 'area') return makeDraft('area', message, pointer);
       if (!picked) return null;
       await afterRepaint(); // make sure our overlay is gone before any screenshot
       return targetDraft(picked);
