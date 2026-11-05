@@ -19,7 +19,7 @@ import {
   type SetupAction,
 } from './api';
 import { arrange, freeSpot, gather, type Arrangement, type Box } from './board/arrange';
-import { GROUP_FRAME, groupFrame, isTyping, itemSize } from './board/Board';
+import { groupFootprint, groupPad, isTyping, itemSize } from './board/Board';
 import { BoardCanvas } from './components/BoardCanvas';
 import { FloatingToolbar, type Tool } from './components/FloatingToolbar';
 import type { IconName } from './components/Icon';
@@ -171,7 +171,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
 
   // The inspector is about one reference. It closes when there isn't exactly one selected, so a selection that
   // isn't a click (a new save) doesn't reopen it.
-  // The group picked by its band, so a group of one can be told from its one reference.
+  // The group picked by its title, so a group of one can be told from its one reference.
   const [pickedGroup, setPickedGroup] = useState<string | null>(null);
   const select = useCallback((itemIds: string[], groupId: string | null = null) => {
     setSelectedIds((current) => (current.length === itemIds.length && current.every((id, i) => id === itemIds[i]) ? current : itemIds));
@@ -400,8 +400,9 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       const parts = groups.map(([g, members]) => ({ id: `group:${g}`, framed: true, spots: arrange(kind, members) }));
       if (loose.length > 0 && kind !== 'tidy') parts.push({ id: 'loose', framed: false, spots: arrange(kind, loose) });
       const units: Box[] = parts.map(({ id, framed, spots }) => {
-        const inner = boundsOfBoxes([...spots.values()]);
-        const f = framed ? groupFrame(inner) : inner;
+        // A group takes its frame and the room for its title above it.
+        const laid = [...spots.values()];
+        const f = framed ? groupFootprint(laid) : boundsOfBoxes(laid);
         return { id, x: f.x, y: f.y, w: f.width, h: f.height };
       });
       // Tidying keeps references outside groups where they are, each lined up on its own.
@@ -518,16 +519,17 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
       else obstacles.push(boxOf(b));
     }
     for (const [g, boxes] of otherGroups) {
-      const f = groupFrame(boundsOfBoxes(boxes));
+      const f = groupFootprint(boxes);
       obstacles.push({ id: `group:${g}`, x: f.x, y: f.y, w: f.width, h: f.height });
     }
     const covers = (f: { x: number; y: number; width: number; height: number }) =>
       obstacles.some((o) => o.x < f.x + f.width && f.x < o.x + o.w && o.y < f.y + f.height && f.y < o.y + o.h);
-    if (!covers(groupFrame(boundsOfBoxes(mine.map(boxOf))))) return undefined;
+    if (!covers(groupFootprint(mine.map(boxOf)))) return undefined;
 
     const dealt = gather(mine.map(boxOf));
-    const frame = groupFrame(boundsOfBoxes([...dealt.values()]));
-    const spot = freeSpot(frame.width, frame.height, frame, obstacles, GROUP_FRAME.pad);
+    const laid = [...dealt.values()];
+    const frame = groupFootprint(laid);
+    const spot = freeSpot(frame.width, frame.height, frame, obstacles, groupPad(laid));
     return mine.map(({ item, placement: p }) => {
       const to = dealt.get(item.id)!;
       return { itemId: item.id, x: to.x + spot.x - frame.x, y: to.y + spot.y - frame.y, scale: p.scale, z: p.z };
