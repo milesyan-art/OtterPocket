@@ -15,6 +15,7 @@ import {
 } from 'pixi.js';
 import { ITEM_KIND_LABELS, siteName } from '@otterpocket/shared';
 import { api, assetUrl, type BoardItem, type BoardView, type Group, type Item, type LayoutUpdate } from '../api';
+import { median, type Box } from './arrange';
 
 /**
  * Saved pages (articles and artists) are bookmark cards, in board units: as wide as a typical preview
@@ -69,23 +70,30 @@ const LIFT_SCALE = 1.04;
 const WHEEL_GESTURE_GAP_MS = 150;
 /** Room (screen px) between the box drawn around several selected items and the items. */
 const GROUP_PAD = 6;
-/** A group title's size and line height, and the room above and below it inside its band, in board units. */
-const GROUP_TITLE = { size: 96, line: 120, room: 44 };
 /**
- * A group's frame, in board units. The title (a heading on the board, about twice a bookmark card's title so
- * it can still be read zoomed out) sits in a band along the top with equal room above and below it; under
- * the band the references get the same room as on the other three sides.
+ * A group's title: a label that stays one size on screen whatever the zoom (screen px), just above the
+ * top-left corner of its frame and cut to the frame's width. It takes no room on the board, so a frame is
+ * only its references and the room around them, the same shape at every zoom. Below `minFrame` wide on
+ * screen the frame is too small to name and the label is left out.
  */
-export const GROUP_FRAME = {
-  pad: 48,
-  title: GROUP_TITLE.size,
-  line: GROUP_TITLE.line,
-  band: GROUP_TITLE.line + GROUP_TITLE.room * 2,
-  radius: 32,
-};
+const GROUP_LABEL = { size: 14, line: 20, gap: 6, minFrame: 48 };
 /**
- * A group's frame, title and band sit just under its lowest reference (stacking orders are whole numbers), so
- * a group brought to the front brings its frame along, over the groups and references it now covers.
+ * Room inside a group's frame around its references, as a share of their typical shorter side: the even gap
+ * Tidy up leaves between references, so small pictures get a snug frame and 4K frames a roomier one. A fixed
+ * size here looked huge around references someone had made small.
+ */
+const GROUP_PAD_SHARE = 0.06;
+/** How round a frame's corners are, as a share of that room. */
+const GROUP_RADIUS_SHARE = 0.75;
+/**
+ * Room kept free above a group's frame for its label when the app lays groups out (arranging, gathering a new
+ * group), as a share of the same typical side. The label's size on the board changes with the zoom, so this
+ * covers the usual zooms; zoomed far out, a label may lie over what's above it.
+ */
+const GROUP_LABEL_ROOM_SHARE = 0.2;
+/**
+ * A group's frame and label sit just under its lowest reference (stacking orders are whole numbers), so a
+ * group brought to the front brings its frame along, over the groups and references it now covers.
  */
 const GROUP_LAYER = { frame: -0.5, label: -0.4, handle: -0.3 };
 const BOARD_BG = 0x141417;
@@ -101,8 +109,8 @@ export interface ScreenRect {
 
 export interface BoardEvents {
   /**
-   * What is selected now, in the order it was picked; empty when nothing is. `groupId` is the group whose band
-   * was pressed to pick it, so a group of one reference picked by its band is the group, not the reference.
+   * What is selected now, in the order it was picked; empty when nothing is. `groupId` is the group whose title
+   * was pressed to pick it, so a group of one reference picked by its title is the group, not the reference.
    */
   select(itemIds: string[], groupId: string | null): void;
   /** An item was clicked on its own (no Shift or ⌘) and let go without being moved, and is now all that's selected. */
@@ -147,7 +155,7 @@ interface GroupView {
   title: string;
   frame: Graphics;
   label: Container;
-  /** The band along the top, title and all: pressing it picks up the whole group. */
+  /** Where the title is: pressing it picks up the whole group. */
   handle: Container;
   text: Text;
   /** The width the title was last fitted into, so it is only measured again when that changes. */
@@ -178,9 +186,9 @@ type Drag =
       kind: 'move';
       /** Everything that moves: the whole selection. */
       ids: string[];
-      /** The item under the pointer; empty when the press was on a group's band. */
+      /** The item under the pointer; empty when the press was on a group's title. */
       pressed: string;
-      /** The group whose band was pressed, if that is what the press was on. */
+      /** The group whose title was pressed, if that is what the press was on. */
       pressedGroup: string | null;
       /** Where the press was, in board units. */
       grab: PointData;
@@ -246,7 +254,7 @@ export class Board {
   private groupList: Group[] = [];
   /** The group whose title React is editing in a text field; its own title is hidden meanwhile. */
   private editingGroup: string | null = null;
-  /** The group whose top band the pointer is over, shown a little lighter so it reads as the handle. */
+  /** The group whose title the pointer is over, shown lighter so it reads as the handle. */
   private hoveredGroup: string | null = null;
   private glides = new Map<string, Glide>();
   private viewGlide: ViewGlide | null = null;
@@ -271,7 +279,7 @@ export class Board {
   /** With ⌥: waiting for a press on a reference to be held still long enough to lift it. */
   private holdTimer = 0;
 
-  /** The group picked by its band, when that is what the selection is. */
+  /** The group picked by its title, when that is what the selection is. */
   private pickedGroup: string | null = null;
   private grayscale = false;
   private needsFit = true;
@@ -505,7 +513,7 @@ export class Board {
    */
   private loneView(item: ScreenRect): BoardView {
     const { width, height } = this.app.screen;
-    const box = this.groupMembers().size > 0 ? groupFrame(item) : item;
+    const box = this.groupMembers().size > 0 ? groupFrame([{ id: '', x: item.x, y: item.y, w: item.width, h: item.height }]) : item;
     const room = this.revealRoom();
     const zoom = clamp(Math.min(1, (LONE_SHARE * room.w) / box.width, (LONE_SHARE * room.h) / box.height), MIN_ZOOM, MAX_ZOOM);
     // The middle of the box goes to the middle of that room, which isn't the middle of the canvas.
@@ -585,7 +593,7 @@ export class Board {
       return this.drawSelection();
     }
     let all = boundsOf([...this.nodes.values()]);
-    for (const nodes of this.groupMembers().values()) all = union(all, groupFrame(boundsOf(nodes)));
+    for (const nodes of this.groupMembers().values()) all = union(all, groupFrame(boxesOf(nodes)));
     const pad = 64;
     const zoom = clamp(Math.min((screen.width - pad * 2) / all.width, (screen.height - pad * 2) / all.height), MIN_ZOOM, 1);
     this.world.scale.set(zoom);
@@ -710,12 +718,12 @@ export class Board {
     const text = new Text({
       text: '',
       resolution: 2,
-      style: textStyle(GROUP_FRAME.title, GROUP_FRAME.line, 1000, 0xa9a9b4, '600'),
+      style: textStyle(GROUP_LABEL.size, GROUP_LABEL.line, 1000, 0xa9a9b4, '600'),
     });
     const label = new Container();
     label.eventMode = 'none';
     label.addChild(text);
-    // Under the group's references like the rest of the frame, so one laid over the band still gets its own press.
+    // Under the group's references like the rest of the frame, so one laid over the label still gets its own press.
     const handle = new Container();
     handle.eventMode = 'static';
     handle.on('pointerdown', (e) => this.onGroupDown(id, e));
@@ -751,9 +759,9 @@ export class Board {
   }
 
   /**
-   * Draws each group's frame around its items as they are now (mid-drag too), with its title in a band at
-   * the top that is a shade lighter, so it reads as the place to pick the group up; lighter still under the
-   * pointer. A group whose items are all selected is outlined in the selection colour.
+   * Draws each group's frame around its items as they are now (mid-drag too), and its title as a label just
+   * above it (GROUP_LABEL) that lights up under the pointer, as the place to pick the group up. A group whose
+   * items are all selected is outlined in the selection colour.
    */
   private drawGroups(members: Map<string, Node[]>): void {
     const zoom = this.world.scale.x;
@@ -762,14 +770,15 @@ export class Board {
       const nodes = members.get(view.id);
       view.frame.clear();
       if (!nodes) {
-        // Hidden under the pointer, its band never hears the pointer leave.
+        // Hidden under the pointer, its label never hears the pointer leave.
         if (this.hoveredGroup === view.id) this.hoveredGroup = null;
         view.box = null;
         view.label.visible = false;
         view.handle.visible = false;
         continue;
       }
-      const box = groupFrame(boundsOf(nodes));
+      const boxes = boxesOf(nodes);
+      const box = groupFrame(boxes);
       view.box = box;
       const bottom = Math.min(...nodes.map((n) => n.data.placement.z));
       view.frame.zIndex = bottom + GROUP_LAYER.frame;
@@ -777,46 +786,51 @@ export class Board {
       view.handle.zIndex = bottom + GROUP_LAYER.handle;
       const whole = nodes.every((n) => selected.has(n.id));
       const hovered = view.id === this.hoveredGroup;
-      const { radius: r, band } = GROUP_FRAME;
-      const { x, y, width: w } = box;
-      const bandPath = () =>
-        view.frame
-          .moveTo(x, y + band)
-          .lineTo(x, y + r)
-          .arcTo(x, y, x + r, y, r)
-          .lineTo(x + w - r, y)
-          .arcTo(x + w, y, x + w, y + r, r)
-          .lineTo(x + w, y + band)
-          .closePath();
-      // The band is solid, so whatever it lies over doesn't show through the title; the rest stays a faint tint.
-      bandPath().fill({ color: BOARD_BG });
-      view.frame.roundRect(x, y, w, box.height, r).fill({ color: 0xffffff, alpha: 0.025 });
-      bandPath().fill({ color: 0xffffff, alpha: hovered ? 0.09 : 0.04 });
+      const r = groupPad(boxes) * GROUP_RADIUS_SHARE;
+      view.frame.roundRect(box.x, box.y, box.width, box.height, r).fill({ color: 0xffffff, alpha: hovered ? 0.04 : 0.025 });
       view.frame
-        .roundRect(x, y, w, box.height, r)
+        .roundRect(box.x, box.y, box.width, box.height, r)
         .stroke({ width: 1.5 / zoom, color: whole ? ACCENT : hovered ? 0x7c7c88 : 0x4a4a55, alpha: whole ? 0.9 : 0.8 });
+
+      // The label: drawn at its own size on screen (scaled against the zoom), its line ending GROUP_LABEL.gap
+      // above the frame.
+      const wide = box.width * zoom;
+      const named = wide >= GROUP_LABEL.minFrame;
+      if (!named && this.hoveredGroup === view.id) this.hoveredGroup = null;
       const fill = view.title ? (hovered ? 0xececf0 : 0xa9a9b4) : hovered ? 0xa9a9b4 : 0x74747f;
       if (view.text.style.fill !== fill) view.text.style.fill = fill;
-      view.handle.position.set(x, y);
-      view.handle.hitArea = new Rectangle(0, 0, w, band);
-      view.handle.visible = true;
-      this.fitTitle(view, box.width - GROUP_FRAME.pad * 2);
-      view.label.position.set(box.x + GROUP_FRAME.pad, box.y + (band - view.text.height) / 2);
-      view.label.visible = view.id !== this.editingGroup;
+      this.fitTitle(view, wide);
+      const top = box.y - (GROUP_LABEL.gap + GROUP_LABEL.line) / zoom;
+      view.label.scale.set(1 / zoom);
+      view.label.position.set(box.x, top);
+      view.label.visible = named && view.id !== this.editingGroup;
+      // Pressing the title picks up the group; a little slop around it, as it is only one line of text.
+      view.handle.scale.set(1 / zoom);
+      view.handle.position.set(box.x, top);
+      view.handle.hitArea = new Rectangle(-4, -4, Math.min(wide, view.text.width) + 8, GROUP_LABEL.line + 8);
+      view.handle.visible = named;
     }
 
     const editing = this.editingGroup ? this.groups.get(this.editingGroup) : undefined;
     if (!editing?.box) return this.events.titleMoved(null, 0);
-    const { pad, band, title, line: lineHeight } = GROUP_FRAME;
-    const top = editing.box.y + (band - lineHeight) / 2;
-    const a = this.world.toGlobal({ x: editing.box.x + pad, y: top });
-    const b = this.world.toGlobal({ x: editing.box.x + editing.box.width - pad, y: top + lineHeight });
-    this.events.titleMoved({ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }, title * zoom);
+    const corner = this.world.toGlobal({ x: editing.box.x, y: editing.box.y });
+    this.events.titleMoved(
+      { x: corner.x, y: corner.y - GROUP_LABEL.gap - GROUP_LABEL.line, width: editing.box.width * zoom, height: GROUP_LABEL.line },
+      GROUP_LABEL.size,
+    );
   }
 
-  /** The title cut to one line `width` wide, ending in "…" when it doesn't fit. Only measured when it changes. */
+  /** The room a group's label takes above its frame, in board units at the zoom now. */
+  private labelRoom(): number {
+    return (GROUP_LABEL.gap + GROUP_LABEL.line) / this.world.scale.x;
+  }
+
+  /**
+   * The title cut to one line `width` wide (screen px), ending in "…" when it doesn't fit. Only measured
+   * again when the width has changed by a few pixels, as it changes all through a zoom.
+   */
   private fitTitle(view: GroupView, width: number): void {
-    const w = Math.max(1, Math.round(width));
+    const w = Math.max(1, Math.floor(width / 4) * 4);
     if (w === view.fittedTo) return;
     view.fittedTo = w;
     const style = view.text.style;
@@ -1042,7 +1056,7 @@ export class Board {
     if (toggle && wasSelected) return this.setSelection(this.selected.filter((id) => id !== node.id));
     if (toggle) this.setSelection([...this.selected, node.id]);
     // Pressing one of several selected items keeps them all, so they can be dragged together; unless they are
-    // just the item's group, which its band moves: a press on one of its items arranges (or takes out) that one.
+    // just the item's group, which its title moves: a press on one of its items arranges (or takes out) that one.
     else if (!wasSelected || this.isWholeGroupOf(node)) this.setSelection([node.id]);
 
     const ids = [...this.selected];
@@ -1147,7 +1161,7 @@ export class Board {
   }
 
   /**
-   * A press on a group's top band picks up the whole group: it selects the group's items (Shift or ⌘ adds them
+   * A press on a group's title picks up the whole group: it selects the group's items (Shift or ⌘ adds them
    * to the selection, or takes them back out when they are all in it) and dragging moves them together. A
    * double-click renames the group.
    */
@@ -1341,7 +1355,7 @@ export class Board {
     const homes = new Map<string, ScreenRect>();
     for (const [groupId, nodes] of this.groupMembers()) {
       const staying = nodes.filter((n) => !moving.has(n.id));
-      if (staying.length < nodes.length && staying.length > 0) homes.set(groupId, groupFrame(boundsOf(nodes)));
+      if (staying.length < nodes.length && staying.length > 0) homes.set(groupId, groupFrame(boxesOf(nodes)));
     }
     return homes;
   }
@@ -1512,12 +1526,14 @@ export class Board {
     const zoom = this.world.scale.x;
     let box = boundsOf(nodes);
     let oneGroup = false;
-    // A group of one picked by its band is the group too: the box (and the tools above it) take in its frame.
+    // A group of one picked by its title is the group too: the box (and the tools above it) take in its frame.
     if (nodes.length > 1 || this.pickedGroup) {
       const selected = new Set(this.selected);
       for (const [id, groupNodes] of members) {
         if (!groupNodes.every((n) => selected.has(n.id))) continue;
-        box = union(box, this.groups.get(id)?.box ?? groupFrame(boundsOf(groupNodes)));
+        // The frame and its label above it, so the tools over the selection don't cover the title.
+        const frame = this.groups.get(id)?.box ?? groupFrame(boxesOf(groupNodes));
+        box = union(box, { ...frame, y: frame.y - this.labelRoom(), height: frame.height + this.labelRoom() });
         oneGroup = groupNodes.length === nodes.length;
       }
     }
@@ -1568,10 +1584,34 @@ function boundsOf(nodes: Node[]): ScreenRect {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-/** A group's frame around the box its items fill, in board units: room on every side and the title band on top. */
-export function groupFrame(items: ScreenRect): ScreenRect {
-  const { pad, band } = GROUP_FRAME;
-  return { x: items.x - pad, y: items.y - pad - band, width: items.width + pad * 2, height: items.height + pad * 2 + band };
+/** Each node's box where it is drawn now, in board units. */
+function boxesOf(nodes: Node[]): Box[] {
+  return nodes.map((n) => ({ id: n.id, x: n.root.x, y: n.root.y, w: n.w * n.root.scale.x, h: n.h * n.root.scale.x }));
+}
+
+/** The room inside a group's frame around `members` (board units): see GROUP_PAD_SHARE. */
+export function groupPad(members: Box[]): number {
+  return median(members.map((b) => Math.min(b.w, b.h))) * GROUP_PAD_SHARE;
+}
+
+/** A group's frame around `members`, in board units: the box they fill and the same room on every side. */
+export function groupFrame(members: Box[]): ScreenRect {
+  const pad = groupPad(members);
+  const x = Math.min(...members.map((b) => b.x)) - pad;
+  const y = Math.min(...members.map((b) => b.y)) - pad;
+  return {
+    x,
+    y,
+    width: Math.max(...members.map((b) => b.x + b.w)) + pad - x,
+    height: Math.max(...members.map((b) => b.y + b.h)) + pad - y,
+  };
+}
+
+/** The room a group takes when the app lays things out: its frame, and room above it for its label. */
+export function groupFootprint(members: Box[]): ScreenRect {
+  const frame = groupFrame(members);
+  const room = median(members.map((b) => Math.min(b.w, b.h))) * GROUP_LABEL_ROOM_SHARE;
+  return { ...frame, y: frame.y - room, height: frame.height + room };
 }
 
 function union(a: ScreenRect, b: ScreenRect): ScreenRect {

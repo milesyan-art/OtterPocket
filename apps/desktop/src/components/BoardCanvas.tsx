@@ -17,7 +17,7 @@ interface Props {
   editingGroupId: string | null;
   /** In the order they were picked. */
   selectedIds: string[];
-  /** The group picked by its band, when the selection is that group; a group of one is then still a group. */
+  /** The group picked by its title, when the selection is that group; a group of one is then still a group. */
   pickedGroup: string | null;
   grayscale: boolean;
   /** A newly saved item to bring into view and select, once it is on this board. */
