@@ -286,6 +286,8 @@ export class Board {
   private savedView: BoardView | null = null;
   /** The canvas size last seen, so a resize can keep the middle of the board in the middle. */
   private screenSize = { width: 0, height: 0 };
+  /** Where the canvas's left edge was in the window, so the sidebar coming or going doesn't move the board. */
+  private screenLeft = 0;
   /** How much of the canvas's right side the floating inspector hides, in screen pixels. */
   private coveredRight = 0;
   private drag: Drag | null = null;
@@ -345,15 +347,21 @@ export class Board {
     // Space let go while another app was in front never arrives here.
     window.addEventListener('blur', this.releaseSpace);
     this.screenSize = { width: this.app.screen.width, height: this.app.screen.height };
+    this.screenLeft = host.getBoundingClientRect().left;
     this.resizeObserver = new ResizeObserver(() => {
-      this.app.resize();
-      const { width, height } = this.app.screen;
-      this.world.position.set(
-        this.world.x + (width - this.screenSize.width) / 2,
-        this.world.y + (height - this.screenSize.height) / 2,
-      );
+      const { clientWidth: width, clientHeight: height } = host;
+      const left = host.getBoundingClientRect().left;
+      // The sidebar opening or closing moves the canvas's left edge: the board stays where it is on screen.
+      // Otherwise the window was resized, and the middle of the board stays in the middle.
+      const dx = left !== this.screenLeft ? this.screenLeft - left : (width - this.screenSize.width) / 2;
+      this.world.position.set(this.world.x + dx, this.world.y + (height - this.screenSize.height) / 2);
       this.screenSize = { width, height };
+      this.screenLeft = left;
+      // Resize, move and draw in one go, before the browser paints: resized and drawn first, the board showed
+      // for a frame where it was before the move.
+      this.app.renderer.resize(width, height);
       this.drawSelection();
+      this.app.render();
     });
     this.resizeObserver.observe(host);
 
