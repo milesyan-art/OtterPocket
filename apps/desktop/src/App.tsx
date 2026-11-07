@@ -22,7 +22,7 @@ import { arrange, freeSpot, gather, type Arrangement, type Box } from './board/a
 import { groupFootprint, groupPad, isTyping, itemSize } from './board/Board';
 import { BoardCanvas } from './components/BoardCanvas';
 import { FloatingToolbar, type Tool } from './components/FloatingToolbar';
-import type { IconName } from './components/Icon';
+import { Icon, type IconName } from './components/Icon';
 import { Inspector } from './components/Inspector';
 import { LayoutSample } from './components/LayoutSample';
 import { LibrarySetup } from './components/LibrarySetup';
@@ -63,6 +63,17 @@ function storedArrangement(): Arrangement {
     // No storage (a private window, blocked site data): start from the first.
   }
   return 'tidy';
+}
+
+/** Where this computer remembers whether the sidebar is hidden. Like Arrange, a preference of the app's. */
+const SIDEBAR_KEY = 'otterpocket.sidebar';
+
+function storedSidebarOpen(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== 'hidden';
+  } catch {
+    return true;
+  }
 }
 
 interface Toast {
@@ -148,6 +159,7 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   const [inspectorEl, setInspectorEl] = useState<HTMLElement | null>(null);
   const [grayscale, setGrayscale] = useState(false);
   const [onTop, setOnTop] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(storedSidebarOpen);
   const [revision, setRevision] = useState(0);
   const [toast, setToast] = useState<Toast | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -227,6 +239,24 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [history]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? 'shown' : 'hidden');
+    } catch {
+      // No storage: it opens with the sidebar shown next time.
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.code !== 'Backslash' || e.altKey || e.shiftKey || isTyping(e.target)) return;
+      e.preventDefault();
+      setSidebarOpen((open) => !open);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Each board reopens where it was left: views from this session first, then what the library kept.
   // Panning fires constantly, so the library only hears about a view once it settles.
@@ -639,7 +669,10 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
   };
 
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? '' : ' sidebar-hidden'}`}>
+      {/* The window's own strip, holding only the window buttons. It stays put whether the sidebar is open or
+          not, so the canvas always starts at the same place. */}
+      <div className="titlebar" data-tauri-drag-region />
       <Sidebar
         collections={collections}
         activeId={activeId}
@@ -656,20 +689,22 @@ function Workspace({ library, notice, onLibraryLost, onLibraryOpened }: Workspac
         onRevealLibrary={revealLibrary}
         onSwitchLibrary={(action) => void switchLibrary(action)}
         onError={showError}
+        boardName={active?.name ?? 'Vault'}
+        onHide={() => setSidebarOpen(false)}
       />
 
       <main className="main">
-        <header className="toolbar" data-tauri-drag-region>
-          <div className="toolbar-title" data-tauri-drag-region>
-            <h1 data-tauri-drag-region>{active?.name ?? 'Vault'}</h1>
-            <span className="muted" data-tauri-drag-region>
-              {items.length} {items.length === 1 ? 'reference' : 'references'}
-              {selectedItems.length > 1 && ` · ${selectedItems.length} selected`}
-            </span>
-          </div>
-        </header>
-
         <div className="content">
+          {/* With the sidebar hidden, its top (the board's name and the sidebar button) stays on a small card in the
+              canvas's corner. All of it is the way back to every board. */}
+          {!sidebarOpen && (
+            <button className="board-card" title="Show sidebar (⌘\)" onClick={() => setSidebarOpen(true)}>
+              <span className="board-card-name">{active?.name ?? 'Vault'}</span>
+              <span className="sidebar-toggle">
+                <Icon name="sidebar" size={18} />
+              </span>
+            </button>
+          )}
           {items.length === 0 && <EmptyState isVault={isVault} />}
           {isVault ? (
             <VaultGrid

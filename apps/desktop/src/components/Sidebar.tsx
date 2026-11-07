@@ -16,10 +16,13 @@ interface Props {
   onRevealLibrary(): void;
   onSwitchLibrary(action: SetupAction): void;
   onError(message: string): void;
+  /** The open board's name, shown at the top like the card that stands in for the sidebar when it's hidden. */
+  boardName: string;
+  onHide(): void;
 }
 
 export function Sidebar(props: Props) {
-  const { collections, activeId, library, onSelect, onChanged, onDeleted, onRevealLibrary, onSwitchLibrary, onError } = props;
+  const { collections, activeId, library, onSelect, onChanged, onDeleted, onRevealLibrary, onSwitchLibrary, onError, boardName, onHide } = props;
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -127,7 +130,12 @@ export function Sidebar(props: Props) {
 
   return (
     <nav className="sidebar">
-      <div className="sidebar-top" data-tauri-drag-region />
+      <div className="sidebar-header">
+        <h1 className="sidebar-board-name">{boardName}</h1>
+        <button className="sidebar-toggle" title="Hide sidebar (⌘\)" aria-label="Hide sidebar" onClick={onHide}>
+          <Icon name="sidebar" size={18} />
+        </button>
+      </div>
       <div className="sidebar-scroll">
         <div className={`row vault-row${activeId === VAULT_ID ? ' active' : ''}`} onClick={() => onSelect(VAULT_ID)}>
           <Icon name="vault" size={16} />

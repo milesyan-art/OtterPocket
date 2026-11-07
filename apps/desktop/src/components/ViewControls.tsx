@@ -31,6 +31,7 @@ const SECTIONS: Section[] = [
       { action: 'Zoom', keys: ['⌘', { gesture: 'wheel', label: 'Scroll' }] },
       { action: 'Zoom in / out', keys: ['+', '/', '−'] },
       { action: 'Fit everything', keys: ['F'] },
+      { action: 'Show / hide sidebar', keys: ['⌘', '\\'] },
     ],
   },
   {

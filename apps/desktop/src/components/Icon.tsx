@@ -21,6 +21,7 @@ const PATHS = {
   pin: 'M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8',
   external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
   finder: 'M4 5h16v14H4zM4 9h16',
+  sidebar: 'M4 5h16v14H4zM9.5 5v14',
   alert: 'M12 3.5l9.5 16.5h-19L12 3.5zM12 10v4.5M12 17.5v.5',
   file: 'M7 3h7l5 5v13H7zM14 3v5h5',
   image: 'M4 5h16v14H4zM4 16l4.5-4.5 4 4 3-3L20 17M15.5 9.5h.01',
